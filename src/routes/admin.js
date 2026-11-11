@@ -1,6 +1,7 @@
 import { hashPassword, validatePassword } from '../auth.js';
 import { effectiveServerConfig, encodeConfigString, installerName } from '../serverconfig.js';
 import { isActive, unrecordedSessions } from '../sessions.js';
+import { gatewayTargets } from '../wsgateway.js';
 import { HttpError, cleanId, likePattern, paging, parseJson, str } from '../util.js';
 import { EMPTY_ADDRESS_BOOK } from './client.js';
 
@@ -141,7 +142,7 @@ export function registerAdminRoutes(r, app) {
     return ctx.empty();
   });
 
-  r.get('/api/admin/me', admin((ctx) => ({ user: publicUser(ctx.user), version: app.version })));
+  r.get('/api/admin/me', admin((ctx) => ({ user: publicUser(ctx.user), version: app.version, source_url: config.sourceUrl })));
 
   r.post('/api/admin/me/password', admin(async (ctx) => {
     const b = await ctx.body();
@@ -521,6 +522,30 @@ export function registerAdminRoutes(r, app) {
     const total = store.get(`SELECT COUNT(*) AS n FROM activity ${w.sql}`, ...w.args).n;
     const rows = store.all(`SELECT * FROM activity ${w.sql} ORDER BY id DESC LIMIT ? OFFSET ?`, ...w.args, p.pageSize, p.offset);
     return page(rows, total, p);
+  }));
+
+  // --- Browser remote sessions -------------------------------------------
+  r.get('/api/admin/remote/config', admin(() => {
+    const targets = gatewayTargets(app);
+    const cfg = effectiveServerConfig(app);
+    return {
+      // hbbs checks licence_key against its key, and the client verifies peer identities with it.
+      key: cfg.key,
+      ready: Boolean(targets.id && targets.relay && cfg.key),
+      problems: [
+        !targets.id && 'Set the ID server in Settings (or HBBS_WS_URL) so the console can reach hbbs.',
+        !targets.relay && 'Set the relay server in Settings (or HBBR_WS_URL) so the console can reach hbbr.',
+        !cfg.key && 'Set the public key in Settings: peers are verified with it.',
+      ].filter(Boolean),
+    };
+  }));
+
+  r.post('/api/admin/remote/sessions', admin(async (ctx) => {
+    const b = await ctx.body();
+    const peerId = cleanId(b.peer_id);
+    if (!peerId) throw new HttpError(400, 'Missing peer_id');
+    app.log(ctx, 'web_session', peerId, str(b.detail, 200));
+    return ctx.empty();
   }));
 
   // --- Settings -----------------------------------------------------------

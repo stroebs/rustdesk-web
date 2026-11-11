@@ -15,9 +15,14 @@ export function loadConfig(env = process.env, overrides = {}) {
   return {
     host: env.HOST || '0.0.0.0',
     port: int(env.PORT, 21114),
+    // Serve HTTPS directly (PEM files). Browsers only decode remote-session video over HTTPS.
+    tlsCertFile: env.TLS_CERT_FILE || '',
+    tlsKeyFile: env.TLS_KEY_FILE || '',
     dataDir,
     dbPath: env.DB_PATH || path.join(dataDir, 'rustdesk-web.sqlite3'),
     publicDir: path.resolve(import.meta.dirname, '../public'),
+    // Shown in the UI as required by the AGPL; point it at your fork if you modify the code.
+    sourceUrl: env.SOURCE_URL || 'https://github.com/stroebs/rustdesk-web',
 
     // Initial administrator, created only when the database has no users.
     adminUsername: env.ADMIN_USERNAME || 'admin',
@@ -32,6 +37,10 @@ export function loadConfig(env = process.env, overrides = {}) {
     hbbsDbPath: env.HBBS_DB_PATH || '',
     hbbsKeyFile: env.HBBS_KEY_FILE || '',
     hbbsSyncSeconds: int(env.HBBS_SYNC_SECONDS, 60),
+
+    // WebSocket endpoints the browser client is proxied to (default: ID/relay server, ports 21118/21119).
+    hbbsWsUrl: env.HBBS_WS_URL || '',
+    hbbrWsUrl: env.HBBR_WS_URL || '',
 
     // Defaults for the client configuration shown in the UI (overridable in Settings).
     idServer: env.ID_SERVER || '',

@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import http from 'node:http';
+import https from 'node:https';
 import path from 'node:path';
 import { Auth, hashPassword, randomPassword } from './auth.js';
 import { Hbbs } from './hbbs.js';
 import { Context, Router, SECURITY_HEADERS, serveStatic } from './http.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerClientRoutes } from './routes/client.js';
+import { attachWsGateway } from './wsgateway.js';
 import { Store } from './store.js';
 import { HttpError } from './util.js';
 
@@ -65,12 +67,18 @@ export function createApp(config, { logger = console } = {}) {
     }
   }
 
-  const server = http.createServer((req, res) => {
+  const onRequest = (req, res) => {
     handle(req, res).catch((err) => {
       logger.error(err);
       res.destroy();
     });
-  });
+  };
+  const tls = config.tlsCertFile && config.tlsKeyFile
+    ? { cert: fs.readFileSync(config.tlsCertFile), key: fs.readFileSync(config.tlsKeyFile) }
+    : null;
+  const server = tls ? https.createServer(tls, onRequest) : http.createServer(onRequest);
+
+  const gateway = attachWsGateway(server, app);
 
   function maintenance() {
     const now = Date.now();
@@ -87,6 +95,7 @@ export function createApp(config, { logger = console } = {}) {
   return {
     ...app,
     server,
+    protocol: tls ? 'https' : 'http',
 
     /** Create the first administrator when the database is empty. */
     async bootstrap() {
@@ -118,8 +127,11 @@ export function createApp(config, { logger = console } = {}) {
       return server.address();
     },
 
+    gateway,
+
     async close() {
       timers.forEach(clearInterval);
+      gateway.closeAll();
       server.closeAllConnections?.();
       await new Promise((resolve) => server.close(() => resolve()));
       store.close();

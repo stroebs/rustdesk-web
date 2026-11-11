@@ -28,7 +28,7 @@ if (admin) {
 }
 
 const address = await app.listen();
-console.log(`rustdesk-web ${app.version} listening on http://${address.address}:${address.port}`);
+console.log(`rustdesk-web ${app.version} listening on ${app.protocol}://${address.address}:${address.port}`);
 console.log(`database: ${config.dbPath}`);
 if (config.hbbsDbPath) {
   const s = app.hbbs.status;
