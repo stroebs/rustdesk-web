@@ -8,6 +8,7 @@
 
 import nacl from '../vendor/nacl.js';
 import { Blake2b } from './blake2b.js';
+import { clipboardMessage, clipboardText } from './clipboard.js';
 import { decode, encode, enums } from './protobuf.js';
 import { sha256 } from './sha256.js';
 
@@ -194,8 +195,9 @@ export class RemoteSession extends EventTarget {
    * @param {string} o.myId       how this client identifies itself to the peer
    * @param {string} o.myName     display name shown on the remote device
    * @param {object} [o.decoding] e.g. { vp9: true, av1: true, h264: false }
+   * @param {boolean} [o.clipboard] exchange text clipboard with the peer
    */
-  constructor({ openSocket, peerId, key, myId = 'rustdesk-web', myName = 'RustDesk Web', decoding = { vp9: true } }) {
+  constructor({ openSocket, peerId, key, myId = 'rustdesk-web', myName = 'RustDesk Web', decoding = { vp9: true }, clipboard = true }) {
     super();
     this.openSocket = openSocket;
     this.peerId = String(peerId).replace(/\s/g, '');
@@ -203,6 +205,7 @@ export class RemoteSession extends EventTarget {
     this.myId = myId;
     this.myName = myName;
     this.decoding = decoding;
+    this.clipboard = clipboard;
     this.channel = null;
     this.peerInfo = null;
     this.kxVersion = null;
@@ -359,7 +362,7 @@ export class RemoteSession extends EventTarget {
   #loginRequest(password) {
     const d = this.decoding;
     const { PreferCodec } = { PreferCodec: enums['SupportedDecoding.PreferCodec'] };
-    const yes = enums['OptionMessage.BoolOption'].Yes;
+    const { Yes: yes, No: no } = enums['OptionMessage.BoolOption'];
     return {
       username: this.peerId,
       password,
@@ -371,7 +374,7 @@ export class RemoteSession extends EventTarget {
       option: {
         image_quality: enums.ImageQuality.Balanced,
         disable_audio: yes,
-        disable_clipboard: yes,
+        disable_clipboard: this.clipboard ? no : yes,
         supported_decoding: {
           ability_vp9: d.vp9 ? 1 : 0,
           ability_vp8: d.vp8 ? 1 : 0,
@@ -407,7 +410,17 @@ export class RemoteSession extends EventTarget {
             this.peerInfo = msg.peer_info;
             this.#emit('peer_info', msg.peer_info);
             break;
+          case 'clipboard':
+          case 'multi_clipboards': {
+            const text = this.clipboard ? clipboardText(msg) : null;
+            if (text !== null) this.#emit('clipboard', text);
+            break;
+          }
           case 'misc':
+            if (msg.misc.union === 'switch_display') {
+              this.#onSwitchDisplay(msg.misc.switch_display);
+              break;
+            }
             if (msg.misc.union === 'close_reason') {
               this.#emit('closed', { reason: msg.misc.close_reason });
               this.close();
@@ -425,6 +438,27 @@ export class RemoteSession extends EventTarget {
     } catch (err) {
       if (!this.closedByUser) this.#emit('closed', { reason: err.message, error: err });
     }
+  }
+
+  /** The peer now streams `sd.display`; it also reports that display's geometry. */
+  #onSwitchDisplay(sd) {
+    const info = this.peerInfo;
+    if (!info) return;
+    info.current_display = sd.display;
+    const d = info.displays[sd.display];
+    if (d) Object.assign(d, { x: sd.x, y: sd.y, width: sd.width, height: sd.height, cursor_embedded: sd.cursor_embedded });
+    this.#emit('display', { index: sd.display, display: d });
+  }
+
+  /** Show another remote display, as the native client does (ui_session_interface.rs). */
+  switchDisplay(index) {
+    this.send({ misc: { switch_display: { display: index } } });
+    // Clients >= 1.2.4 then narrow capture to that display only.
+    this.send({ misc: { capture_displays: { set: [index] } } });
+  }
+
+  sendClipboardText(text) {
+    if (this.clipboard) this.send(clipboardMessage(text));
   }
 
   /** Send a Message (plain object, e.g. { mouse_event: {...} }). */

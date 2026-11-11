@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './require-node.js';
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { explainOpenError, prepareDataDir } from './datadir.js';

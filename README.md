@@ -15,8 +15,8 @@ implements the client-side **"API server"** protocol and adds a web console on t
 - **Audit logs.** Incoming connections (who, from where, how long, what type), file
   transfers, and an activity log of sign-ins and admin changes.
 - **Remote sessions in the browser.** Connect to any device from the console, with no
-  RustDesk app on the admin's machine: view the screen, use mouse and keyboard, send
-  Ctrl+Alt+Del. Sessions are relayed through your own hbbs/hbbr and end-to-end encrypted.
+  RustDesk app on the admin's machine: view the screen, use mouse and keyboard, copy and
+  paste text both ways, switch between the device's monitors, send Ctrl+Alt+Del. Sessions are relayed through your own hbbs/hbbr and end-to-end encrypted.
 - **Client setup.** Generates the importable configuration string and the
   self-configuring Windows installer file name.
 
@@ -65,7 +65,7 @@ for `linux/amd64` and `linux/arm64`.
 
 ## Running without Docker
 
-Requires Node.js **22.13 or newer**.
+Requires Node.js **24 or newer**.
 
 ```bash
 ADMIN_PASSWORD='choose-a-strong-one' npm start
@@ -97,9 +97,17 @@ Requirements:
   resolves publicly).
 - A current Chrome, Edge, Firefox or Safari.
 
-Current limitations: no clipboard sync, file transfer, audio or multi-monitor switching,
-and the remote cursor is not drawn (your own pointer is used). Sessions always use the
-relay; direct connections are not possible from a browser.
+**Clipboard.** Text copied on the device is placed on your clipboard (if the browser
+refuses, a *Copy remote clipboard* button appears). Pressing Ctrl+V (⌘V on a Mac) in the
+viewer sends your clipboard to the device and pastes it there. Only plain text is
+exchanged.
+
+**Multiple monitors.** When the device has more than one display, buttons in the toolbar
+switch between them.
+
+Current limitations: no file transfer or audio, images and rich text are not copied, and the
+remote cursor is not drawn (your own pointer is used). Sessions always use the relay; direct
+connections are not possible from a browser.
 
 Starting a session is recorded in **Activity**, and the device reports it under
 **Connections** like any other session, as coming from `rustdesk-web` with the admin's name.
@@ -218,4 +226,5 @@ Versions up to and including 0.1.3 were released under the MIT license.
 
 The browser client implements RustDesk's protocol using its protocol definitions (`proto/`,
 AGPL-3.0, © Purslane Ltd). Icons are adapted from [Feather](https://feathericons.com) (MIT).
-TweetNaCl-js is vendored under its public-domain dedication (Unlicense).
+TweetNaCl-js is vendored under its public-domain dedication (Unlicense), and
+[fzstd](https://github.com/101arrowz/fzstd) under the MIT license.

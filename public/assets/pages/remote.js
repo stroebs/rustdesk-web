@@ -1,10 +1,10 @@
-import { buttonMask, ctrlAltDelEvent, keyEventFor, toRemote, wheelEvent } from '../client/input.js';
+import { buttonMask, ctrlAltDelEvent, isPasteShortcut, keyEventFor, pasteKeyEvent, toRemote, wheelEvent } from '../client/input.js';
 import { MOUSE, RemoteSession } from '../client/session.js';
 import { VideoRenderer, detectDecoders, videoSupported } from '../client/video.js';
 import { api, enc } from '../lib/api.js';
 import { clear, h } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
-import { errorBox, field, input } from '../lib/ui.js';
+import { errorBox, field, input, toast } from '../lib/ui.js';
 
 const wsUrl = (kind) => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${kind}`;
 
@@ -121,7 +121,11 @@ async function session(root, peerId, user) {
     const renderer = new VideoRenderer(canvas, {
       onKeyframeNeeded: () => s.send({ misc: { refresh_video: true } }),
     });
-    s.addEventListener('video', (e) => renderer.push(e.detail));
+    // While switching displays, frames of the previous one can still be in flight.
+    s.addEventListener('video', (e) => {
+      if ((s.peerInfo?.displays?.length ?? 1) > 1 && e.detail.display !== s.peerInfo.current_display) return;
+      renderer.push(e.detail);
+    });
     s.addEventListener('message_box', (e) => { status.textContent = e.detail.text || e.detail.title || ''; });
     s.addEventListener('closed', (e) => {
       cleanup();
@@ -164,13 +168,86 @@ async function session(root, peerId, user) {
       const w = wheelEvent(e);
       if (w.x || w.y) s.sendMouse(w.mask, w.x, w.y);
     };
+    // Paste: on Ctrl/Cmd+V the browser fires a paste event carrying the local
+    // clipboard. Send that text to the device first, then the device's own paste
+    // keystroke. If no paste event arrives (nothing to paste), just send the keys.
+    let pasteTimer = 0;
+    let swallowPasteKeyUp = false;
+    const sendPaste = () => {
+      clearTimeout(pasteTimer);
+      pasteTimer = 0;
+      s.sendKey(pasteKeyEvent(platform));
+    };
+    const onPaste = (e) => {
+      if (document.activeElement !== canvas) return;
+      e.preventDefault();
+      const text = e.clipboardData?.getData('text/plain');
+      if (text) s.sendClipboardText(text);
+      sendPaste();
+    };
     const onKey = (down) => (e) => {
       if (document.activeElement !== canvas) return;
+      if (down && isPasteShortcut(e)) {
+        // No preventDefault: that would cancel the paste event.
+        swallowPasteKeyUp = true;
+        clearTimeout(pasteTimer);
+        pasteTimer = setTimeout(sendPaste, 300);
+        return;
+      }
+      if (!down && swallowPasteKeyUp && e.key?.toLowerCase() === 'v') {
+        swallowPasteKeyUp = false;
+        return;
+      }
       const ev = keyEventFor(e, down);
       if (!ev) return;
       e.preventDefault();
       s.sendKey(ev);
     };
+
+    // Device clipboard -> local clipboard. Browsers may refuse without focus or a
+    // user gesture; then offer a button instead.
+    let remoteClip = null;
+    const copyButton = h('button', { type: 'button', class: 'btn sm hidden', title: 'The remote device copied text; click to copy it here' }, 'Copy remote clipboard');
+    copyButton.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(remoteClip ?? '');
+        copyButton.classList.add('hidden');
+        toast('Copied the remote clipboard');
+      } catch (err) {
+        toast(`Could not copy: ${err.message}`, 'error');
+      }
+      canvas.focus();
+    });
+    s.addEventListener('clipboard', async (e) => {
+      remoteClip = e.detail;
+      try {
+        await navigator.clipboard.writeText(remoteClip);
+        copyButton.classList.add('hidden');
+      } catch {
+        copyButton.classList.remove('hidden');
+      }
+    });
+
+    // Display switcher (only when the device has more than one).
+    const displayButtons = (s.peerInfo?.displays ?? []).map((d, i) =>
+      h('button', {
+        type: 'button',
+        class: 'btn sm',
+        title: `Display ${i + 1}${d.name ? ` (${d.name})` : ''}, ${d.width}×${d.height}`,
+        'aria-label': `Show display ${i + 1}`,
+        onclick: () => {
+          if (i === s.peerInfo.current_display) return;
+          renderer.waitForKeyframe();
+          s.switchDisplay(i);
+          canvas.focus();
+        },
+      }, String(i + 1)));
+    const markDisplay = () => displayButtons.forEach((b, i) => b.setAttribute('aria-pressed', String(i === s.peerInfo.current_display)));
+    s.addEventListener('display', () => {
+      renderer.waitForKeyframe();
+      markDisplay();
+    });
+    markDisplay();
     const keyDown = onKey(true);
     const keyUp = onKey(false);
     canvas.addEventListener('pointermove', onMove);
@@ -180,9 +257,12 @@ async function session(root, peerId, user) {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('keydown', keyDown);
     window.addEventListener('keyup', keyUp);
+    window.addEventListener('paste', onPaste);
 
     // Toolbar
     const tools = h('span', { class: 'row remote-tools' },
+      copyButton,
+      displayButtons.length > 1 ? h('span', { class: 'segmented', role: 'group', 'aria-label': 'Displays' }, h('span', { class: 'muted' }, 'Display'), displayButtons) : null,
       h('button', { type: 'button', class: 'btn sm', onclick: () => s.sendKey(ctrlAltDelEvent(platform)) }, 'Ctrl+Alt+Del'),
       h('button', {
         type: 'button',
@@ -201,6 +281,8 @@ async function session(root, peerId, user) {
     function cleanup() {
       window.removeEventListener('keydown', keyDown);
       window.removeEventListener('keyup', keyUp);
+      window.removeEventListener('paste', onPaste);
+      clearTimeout(pasteTimer);
       cancelAnimationFrame(rafId);
       renderer.close();
       tools.remove();

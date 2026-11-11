@@ -82,3 +82,13 @@ export function toRemote(clientX, clientY, rect, size, display = { x: 0, y: 0 })
     y: Math.round(Math.min(Math.max(y, 0), size.height - 1)) + (display.y ?? 0),
   };
 }
+
+/** Ctrl+V / Cmd+V: let the browser's paste event deliver the local clipboard first. */
+export function isPasteShortcut(e) {
+  return (e.ctrlKey || e.metaKey) && !e.altKey && e.key?.toLowerCase() === 'v';
+}
+
+/** The remote's own paste keystroke: Cmd+V on macOS peers, Ctrl+V elsewhere. */
+export function pasteKeyEvent(peerPlatform) {
+  return { chr: 'v'.codePointAt(0), press: true, modifiers: [peerPlatform === 'Mac OS' ? CK.Meta : CK.Control] };
+}

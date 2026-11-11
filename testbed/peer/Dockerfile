@@ -4,7 +4,7 @@ FROM debian:bookworm-slim
 
 ARG RUSTDESK_VERSION=1.5.1
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl xvfb x11-apps xterm dbus-x11 procps libayatana-appindicator3-1 \
+ && apt-get install -y --no-install-recommends ca-certificates curl xvfb x11-apps xterm dbus-x11 procps libayatana-appindicator3-1 x11-xserver-utils xclip \
  && curl -fsSL -o /tmp/rustdesk.deb \
       "https://github.com/rustdesk/rustdesk/releases/download/${RUSTDESK_VERSION}/rustdesk-${RUSTDESK_VERSION}-x86_64.deb" \
  && apt-get install -y --no-install-recommends /tmp/rustdesk.deb \

@@ -248,3 +248,6 @@ h3.small { margin-bottom: 8px; letter-spacing: 0.05em; }
 .remote-canvas { display: block; outline: none; cursor: default; background: #000; touch-action: none; }
 .remote-screen.fit .remote-canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
 .remote-canvas:focus-visible { box-shadow: 0 0 0 2px #6d8ff0; }
+.segmented { display: inline-flex; align-items: center; gap: 4px; }
+.segmented .muted { margin-right: 2px; }
+.remote-bar .btn[aria-pressed="true"] { background: #6d8ff0; border-color: #6d8ff0; color: #0b1020; }

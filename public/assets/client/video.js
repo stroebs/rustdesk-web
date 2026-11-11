@@ -100,6 +100,11 @@ export class VideoRenderer {
     }
   }
 
+  /** Drop frames until the next keyframe (e.g. after switching displays). */
+  waitForKeyframe() {
+    this.needKey = true;
+  }
+
   close() {
     this.#reset(false);
   }

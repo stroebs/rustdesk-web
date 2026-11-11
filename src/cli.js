@@ -3,6 +3,7 @@
 //   rustdesk-web reset-password <username> [password]
 //   rustdesk-web create-admin <username> [password]
 //   rustdesk-web list-users
+import './require-node.js';
 import { hashPassword, randomPassword, validatePassword } from './auth.js';
 import { loadConfig } from './config.js';
 import { explainOpenError, prepareDataDir } from './datadir.js';
