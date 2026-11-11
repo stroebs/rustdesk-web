@@ -1,0 +1,28 @@
+{
+  "name": "rustdesk-web",
+  "version": "0.1.0",
+  "description": "Self-hosted admin web interface and API server for RustDesk OSS (hbbs/hbbr)",
+  "type": "module",
+  "license": "MIT",
+  "author": "Den Stroebel",
+  "keywords": [
+    "rustdesk",
+    "remote-desktop",
+    "admin",
+    "self-hosted",
+    "address-book",
+    "api-server"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "bin": {
+    "rustdesk-web": "src/cli.js"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
+    "cli": "node --disable-warning=ExperimentalWarning src/cli.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  }
+}

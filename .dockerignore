@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+data
+web-data
+hbbs-data
+test
+*.md
+!README.md
