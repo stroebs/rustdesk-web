@@ -21,6 +21,10 @@ You should get an acknowledgement within a few days.
   from the token. Identities are linked to accounts by proving them (a valid token on
   the linking request) or by an administrator. Sessions opened this way require a
   matching valid token on every request.
+- **Saved device passwords** are stored per administrator as `sha256(password + salt)`,
+  the same form the RustDesk client keeps. It is enough to log in to that device (while
+  its password is unchanged), so protect the data directory and its backups. The browser
+  never receives it: the console computes the login answer for the device's challenge.
 - `CF-Connecting-IP` and `X-Forwarded-For` can be forged by anyone who reaches the
   port directly. They are only used when enabled; restrict `CF-Connecting-IP` to your
   cloudflared host(s) with `CF_TRUSTED_PROXIES`, or keep the port private.

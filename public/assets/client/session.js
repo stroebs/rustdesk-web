@@ -208,6 +208,7 @@ export class RemoteSession extends EventTarget {
     this.clipboard = clipboard;
     this.channel = null;
     this.peerInfo = null;
+    this.passwordHash = null;
     this.kxVersion = null;
   }
 
@@ -219,8 +220,14 @@ export class RemoteSession extends EventTarget {
     this.#emit('status', text);
   }
 
-  /** Rendezvous, relay, secure, log in. Resolves with the peer's PeerInfo. */
-  async connect(password) {
+  /**
+   * Rendezvous, relay, secure, log in. Resolves with the peer's PeerInfo.
+   * `credential` is the password, or `{ answer(salt, challenge) }` resolving with
+   * the login answer (bytes) computed elsewhere, e.g. from a saved password.
+   * After a password login, `passwordHash` holds { salt, hash: sha256(password + salt) },
+   * which is what RustDesk clients store to log in again.
+   */
+  async connect(credential) {
     if (!this.key) throw new SessionError('The server public key is not configured', 'no_key');
     const rsPk = base64ToBytes(this.key);
     if (rsPk.length !== nacl.sign.publicKeyLength) throw new SessionError('The server public key is not valid', 'no_key');
@@ -240,7 +247,7 @@ export class RemoteSession extends EventTarget {
     await this.#secure(signedIdPk, rsPk);
 
     this.#status('Logging in…');
-    const peerInfo = await this.#login(password);
+    const peerInfo = await this.#login(credential);
     this.peerInfo = peerInfo;
     this.#pump();
     return peerInfo;
@@ -337,13 +344,20 @@ export class RemoteSession extends EventTarget {
     this.kxVersion = picked;
   }
 
-  async #login(password) {
+  async #login(credential) {
     for (;;) {
       const msg = decode('Message', await this.channel.next());
       if (msg.union === 'hash') {
         const { salt, challenge } = msg.hash;
-        const stored = sha256(utf8(password), utf8(salt));
-        const answer = sha256(stored, utf8(challenge));
+        let answer;
+        if (typeof credential === 'string') {
+          const stored = sha256(utf8(credential), utf8(salt));
+          this.passwordHash = { salt, hash: stored };
+          answer = sha256(stored, utf8(challenge));
+        } else {
+          answer = await credential.answer(salt, challenge);
+          if (!answer) throw new SessionError('No usable saved password', 'bad_password');
+        }
         this.channel.send(encode('Message', { login_request: this.#loginRequest(answer) }));
       } else if (msg.union === 'login_response') {
         const r = msg.login_response;

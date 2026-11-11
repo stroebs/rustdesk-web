@@ -126,6 +126,19 @@ const MIGRATIONS = [
   CREATE UNIQUE INDEX users_cf_email ON users(cf_email COLLATE NOCASE) WHERE cf_email <> '';
   ALTER TABLE tokens ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'password';
   `,
+  // v4: device passwords saved for browser sessions, per administrator. Like the
+  // RustDesk client, only sha256(password + salt) is kept, together with the salt.
+  `
+  CREATE TABLE remote_passwords (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    peer_id TEXT NOT NULL,
+    salt TEXT NOT NULL,
+    hash BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER,
+    PRIMARY KEY (user_id, peer_id)
+  );
+  `,
 ];
 
 // node:sqlite rejects booleans and undefined as bind values.

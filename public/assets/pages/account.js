@@ -1,7 +1,7 @@
 import { api } from '../lib/api.js';
 import { h } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
-import { badge, confirmDialog, errorBox, field, fmtDate, input, pageHeader, toast } from '../lib/ui.js';
+import { badge, confirmDialog, dataTable, errorBox, field, fmtDate, input, pageHeader, timeAgo, toast } from '../lib/ui.js';
 
 function cloudflareCard(session) {
   const body = h('div', { class: 'card-body stack' }, h('p', { class: 'muted' }, 'Loading…'));
@@ -59,6 +59,31 @@ function cloudflareCard(session) {
   return card;
 }
 
+function savedPasswordsCard() {
+  const body = h('div', { class: 'card-body' }, h('p', { class: 'muted' }, 'Loading…'));
+  const card = h('div', { class: 'card' }, h('div', { class: 'card-header' }, icon('key'), h('h2', null, 'Saved device passwords')), body);
+  const load = () => api.get('/remote/passwords').then(({ items }) => {
+    if (!items.length) {
+      body.replaceChildren(h('p', { class: 'muted' }, 'None. Passwords you choose to remember when connecting to a device appear here.'));
+      return;
+    }
+    body.replaceChildren(dataTable({
+      columns: [
+        { label: 'Device', render: (p) => h('a', { href: `#/connect/${encodeURIComponent(p.peer_id)}`, title: 'Connect' }, p.hostname ? `${p.hostname} · ${p.peer_id}` : p.peer_id) },
+        { label: 'Last used', render: (p) => timeAgo(p.last_used_at) },
+        { label: '', render: (p) => h('button', { type: 'button', class: 'btn sm', onclick: async () => {
+          await api.del(`/remote/passwords/${encodeURIComponent(p.peer_id)}`);
+          toast('Saved password forgotten');
+          load();
+        } }, 'Forget') },
+      ],
+      rows: items,
+    }));
+  }, (err) => body.replaceChildren(errorBox(err)));
+  load();
+  return card;
+}
+
 export default {
   title: 'My account',
   render({ root, session }) {
@@ -102,6 +127,7 @@ export default {
       ),
       h('div', { class: 'card' }, h('div', { class: 'card-header' }, icon('lock'), h('h2', null, 'Change password')), form),
       cloudflareCard(session),
+      savedPasswordsCard(),
     ));
   },
 };
