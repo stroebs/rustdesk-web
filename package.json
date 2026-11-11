@@ -1,6 +1,6 @@
 {
   "name": "rustdesk-web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Self-hosted admin web interface and API server for RustDesk OSS (hbbs/hbbr)",
   "type": "module",
   "license": "MIT",

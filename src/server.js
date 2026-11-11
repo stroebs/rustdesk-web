@@ -1,11 +1,23 @@
 #!/usr/bin/env node
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
+import { explainOpenError, prepareDataDir } from './datadir.js';
 
 const config = loadConfig();
-const app = createApp(config);
 
-const admin = await app.bootstrap();
+let app;
+let admin;
+try {
+  prepareDataDir(config.dbPath);
+  app = createApp(config);
+  admin = await app.bootstrap();
+} catch (err) {
+  const hint = explainOpenError(err, config.dbPath);
+  if (!hint) throw err;
+  console.error(hint);
+  process.exit(1);
+}
+
 if (admin) {
   const line = '='.repeat(64);
   console.log(`\n${line}\n Created initial administrator account`);

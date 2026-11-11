@@ -5,6 +5,7 @@
 //   rustdesk-web list-users
 import { hashPassword, randomPassword, validatePassword } from './auth.js';
 import { loadConfig } from './config.js';
+import { explainOpenError, prepareDataDir } from './datadir.js';
 import { encodeConfigString } from './serverconfig.js';
 import { Store } from './store.js';
 
@@ -41,7 +42,16 @@ if (command === 'config-string') {
 
 if (!['reset-password', 'create-admin', 'list-users'].includes(command)) usage();
 
-const store = new Store(config.dbPath);
+// `docker exec` runs as root: drop to the server's user so SQLite never leaves
+// root-owned -wal/-shm files that the server can't open.
+prepareDataDir(config.dbPath);
+let store;
+try {
+  store = new Store(config.dbPath);
+} catch (err) {
+  console.error(explainOpenError(err, config.dbPath) ?? err.message);
+  process.exit(1);
+}
 const now = Date.now();
 
 try {
