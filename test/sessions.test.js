@@ -57,7 +57,7 @@ describe('connection log reconciliation with heartbeats', () => {
     await heartbeat([42, 43]);
     await audit({ action: 'new', conn_id: 43 });
 
-    const expected = [{ device_id: DEV, hostname: '', count: 1 }];
+    const expected = [{ device_id: DEV, hostname: '', ip: '127.0.0.1', count: 1 }];
     assert.deepEqual((await admin.get('/api/admin/audit/connections')).data.unrecorded_sessions, expected);
     const stats = (await admin.get('/api/admin/stats')).data;
     assert.equal(stats.active_sessions, 2);

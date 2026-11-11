@@ -57,7 +57,7 @@ async function showDevice(id, users, reload) {
       h('dl', { class: 'kv' },
         h('dt', null, 'RustDesk ID'), h('dd', { class: 'mono' }, d.id),
         h('dt', null, 'Owner'), h('dd', null, d.owner_username ?? h('span', { class: 'muted' }, 'Unassigned')),
-        h('dt', null, 'Last IP'), h('dd', { class: 'mono' }, d.ip || '—'),
+        h('dt', null, 'Public IP'), h('dd', { class: 'mono' }, d.ip || '—'),
         h('dt', null, 'First seen'), h('dd', null, fmtDate(d.first_seen_at)),
         d.registered_at ? [h('dt', null, 'Registered in hbbs'), h('dd', null, fmtDate(d.registered_at))] : null,
         d.note ? [h('dt', null, 'Note'), h('dd', null, d.note)] : null,
@@ -86,7 +86,7 @@ export default {
     const users = await loadUsers();
     const list = listView({
       endpoint: '/devices',
-      searchPlaceholder: 'Search ID, hostname, user, IP, note…',
+      searchPlaceholder: 'Search ID, hostname, user, public IP, note…',
       initial: { q: query.get('q') ?? '', filters: { status: query.get('status') ?? '', owner: query.get('owner') ?? '' } },
       filters: [
         { name: 'status', label: 'Status', options: [['', 'All devices'], ['online', 'Online'], ['offline', 'Offline']] },
@@ -103,6 +103,11 @@ export default {
           ),
         },
         { label: 'System', class: 'hide-sm', render: (d) => h('div', null, osLabel(d.os) || '—', d.username ? h('div', { class: 'sub' }, d.username) : null) },
+        {
+          label: 'Public IP',
+          class: 'hide-sm',
+          render: (d) => (d.ip ? h('span', { class: 'mono', title: 'Address the device last contacted this server from' }, d.ip) : '—'),
+        },
         { label: 'Version', class: 'hide-sm', render: (d) => d.version || '—' },
         { label: 'Owner', render: (d) => d.owner_username ?? h('span', { class: 'muted' }, 'Unassigned') },
         { label: 'Note', class: 'hide-sm', render: (d) => d.note ? h('span', { title: d.note }, d.note.length > 40 ? `${d.note.slice(0, 40)}…` : d.note) : '' },

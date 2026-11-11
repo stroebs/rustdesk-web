@@ -44,7 +44,14 @@ export function unrecordedNotice(list) {
       h('strong', null, `${total} open session${total === 1 ? '' : 's'} not in the log`),
       h('p', null,
         'Reported as open by ',
-        list.map((u, i) => [i ? ', ' : '', h('a', { href: `#/devices?q=${encodeURIComponent(u.device_id)}` }, u.hostname || u.device_id), u.count > 1 ? ` (${u.count})` : '']),
+        list.map((u, i) => [
+          i ? ', ' : '',
+          h('a', { href: `#/devices?q=${encodeURIComponent(u.device_id)}` }, u.hostname || u.device_id),
+          // e.g. "devin (165.0.107.192)" or "devin (165.0.107.192, 2 sessions)"
+          u.ip || u.count > 1
+            ? [' (', u.ip ? h('span', { class: 'mono' }, u.ip) : null, u.ip && u.count > 1 ? ', ' : '', u.count > 1 ? `${u.count} sessions` : '', ')']
+            : null,
+        ]),
         '. These sessions started while this server could not record them, for example while it was down. RustDesk does not resend missed events, so they will not appear here. New sessions are logged normally.',
       ),
     ),
