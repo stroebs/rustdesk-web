@@ -9,12 +9,13 @@ import connections from './pages/connections.js';
 import dashboard from './pages/dashboard.js';
 import devices from './pages/devices.js';
 import files from './pages/files.js';
+import remote from './pages/remote.js';
 import settings from './pages/settings.js';
 import users from './pages/users.js';
 
 const NAV = [
   { section: null, items: [['', 'Dashboard', 'grid', dashboard]] },
-  { section: 'Manage', items: [['devices', 'Devices', 'monitor', devices], ['users', 'Users', 'users', users], ['address-books', 'Address books', 'book', addressBooks]] },
+  { section: 'Manage', items: [['connect', 'Remote session', 'remote', remote], ['devices', 'Devices', 'monitor', devices], ['users', 'Users', 'users', users], ['address-books', 'Address books', 'book', addressBooks]] },
   { section: 'Audit', items: [['connections', 'Connections', 'link', connections], ['files', 'File transfers', 'file', files], ['activity', 'Activity', 'activity', activity]] },
   { section: 'System', items: [['settings', 'Settings', 'sliders', settings]] },
 ];
@@ -75,6 +76,8 @@ function renderShell(active) {
     nav,
     h('div', { class: 'sidebar-footer' },
       h('div', { class: 'who' }, h('strong', null, user.display_name || user.username), user.username),
+      // AGPL-3.0 §13: users of the service are offered its source.
+      h('a', { class: 'source-link', href: session.source_url, target: '_blank', rel: 'noopener' }, `Source code · v${session.version}`),
       h('div', { class: 'nav' },
         h('a', { href: '#/account', class: active === 'account' && 'active', onclick: closeNav }, icon('user'), 'My account'),
         h('a', { href: '#/', onclick: logout }, icon('logout'), 'Sign out'),
@@ -141,7 +144,8 @@ async function route() {
   if (!session) return renderLogin();
   const { section, params, query } = parseHash();
   const page = PAGES[section] ?? notFound;
-  const main = renderShell(section);
+  // Full-screen pages (the remote viewer) render without the admin chrome.
+  const main = page.fullscreen ? clear(app).appendChild(h('main', { class: 'main-full' })) : renderShell(section);
   document.title = `${page.title} · RustDesk Web Admin`;
   try {
     await page.render({ root: main, params, query, session });

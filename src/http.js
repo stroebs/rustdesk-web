@@ -179,7 +179,7 @@ const MIME = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
-export async function serveStatic(ctx, root) {
+export async function serveStatic(ctx, root, { cacheControl = 'no-cache' } = {}) {
   if (ctx.method !== 'GET' && ctx.method !== 'HEAD') return ctx.text('Method not allowed', 405);
   let rel;
   try {
@@ -208,7 +208,7 @@ export async function serveStatic(ctx, root) {
     'Content-Type': MIME[path.extname(file).toLowerCase()] ?? 'application/octet-stream',
     'Content-Length': stat.size,
     'Last-Modified': lastModified,
-    'Cache-Control': 'no-cache',
+    'Cache-Control': cacheControl,
   });
   if (ctx.method === 'HEAD') return ctx.res.end();
   await new Promise((resolve) => {

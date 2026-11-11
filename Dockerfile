@@ -10,7 +10,7 @@ ARG REVISION=unknown
 LABEL org.opencontainers.image.title="rustdesk-web" \
       org.opencontainers.image.description="Admin web interface and API server for RustDesk OSS" \
       org.opencontainers.image.source="https://github.com/stroebs/rustdesk-web" \
-      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}"
 

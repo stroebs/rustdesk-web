@@ -1,0 +1,155 @@
+#!/usr/bin/env node
+// Generate public/assets/client/schema.js from proto/*.proto.
+//
+// Parses the proto3 subset RustDesk uses (messages, nested messages and enums,
+// oneof, repeated, field options) and fails loudly on anything else, so a new
+// construct upstream is noticed rather than silently mis-encoded.
+//
+//   node tools/gen-proto.mjs           write schema.js
+//   node tools/gen-proto.mjs --check   exit 1 if schema.js is out of date
+
+import fs from 'node:fs';
+import path from 'node:path';
+
+const ROOT = path.resolve(import.meta.dirname, '..');
+const FILES = ['proto/rendezvous.proto', 'proto/message.proto'];
+const OUT = path.join(ROOT, 'public/assets/client/schema.js');
+const SCALARS = new Set(['double', 'float', 'int32', 'int64', 'uint32', 'uint64', 'sint32', 'sint64', 'fixed32', 'fixed64', 'sfixed32', 'sfixed64', 'bool', 'string', 'bytes']);
+
+function tokenize(src, file) {
+  const text = src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+  const tokens = text.match(/"(?:[^"\\]|\\.)*"|[A-Za-z_][\w.]*|-?\d+|[{}=;\[\](),<>]/g) ?? [];
+  let i = 0;
+  return {
+    peek: () => tokens[i],
+    next: () => tokens[i++],
+    expect(t) {
+      const got = tokens[i++];
+      if (got !== t) throw new Error(`${file}: expected "${t}" but found "${got}" (token ${i})`);
+      return got;
+    },
+    done: () => i >= tokens.length,
+  };
+}
+
+function skipOptions(tk) {
+  // [jstype = JS_STRING, deprecated = true]
+  if (tk.peek() !== '[') return;
+  while (tk.next() !== ']');
+}
+
+function parseEnum(tk, scope, enums) {
+  const name = `${scope}${tk.next()}`;
+  tk.expect('{');
+  const values = {};
+  while (tk.peek() !== '}') {
+    const key = tk.next();
+    if (key === 'option') { while (tk.next() !== ';'); continue; }
+    tk.expect('=');
+    values[key] = Number(tk.next());
+    skipOptions(tk);
+    tk.expect(';');
+  }
+  tk.expect('}');
+  enums[name] = values;
+}
+
+function parseField(tk, fields, oneof) {
+  let repeated = false;
+  let type = tk.next();
+  if (type === 'repeated') {
+    repeated = true;
+    type = tk.next();
+  }
+  if (type === 'optional' || type === 'map' || type === 'required') throw new Error(`unsupported field label/type "${type}"`);
+  const name = tk.next();
+  tk.expect('=');
+  const no = Number(tk.next());
+  skipOptions(tk);
+  tk.expect(';');
+  fields.push({ name, no, type, repeated, oneof });
+}
+
+function parseMessage(tk, scope, messages, enums) {
+  const name = `${scope}${tk.next()}`;
+  tk.expect('{');
+  const fields = [];
+  while (tk.peek() !== '}') {
+    const t = tk.peek();
+    if (t === 'message') { tk.next(); parseMessage(tk, `${name}.`, messages, enums); }
+    else if (t === 'enum') { tk.next(); parseEnum(tk, `${name}.`, enums); }
+    else if (t === 'option') { while (tk.next() !== ';'); }
+    else if (t === 'reserved' || t === 'extensions') throw new Error(`${name}: unsupported "${t}"`);
+    else if (t === 'oneof') {
+      tk.next();
+      const group = tk.next();
+      tk.expect('{');
+      while (tk.peek() !== '}') parseField(tk, fields, group);
+      tk.expect('}');
+    } else parseField(tk, fields, null);
+  }
+  tk.expect('}');
+  messages[name] = fields;
+}
+
+function parseFile(file, messages, enums) {
+  const tk = tokenize(fs.readFileSync(path.join(ROOT, file), 'utf8'), file);
+  while (!tk.done()) {
+    const t = tk.next();
+    if (t === 'syntax') { tk.expect('='); if (tk.next() !== '"proto3"') throw new Error(`${file}: only proto3 is supported`); tk.expect(';'); }
+    else if (t === 'package' || t === 'option' || t === 'import') { while (tk.next() !== ';'); }
+    else if (t === 'message') parseMessage(tk, '', messages, enums);
+    else if (t === 'enum') parseEnum(tk, '', enums);
+    else throw new Error(`${file}: unexpected top-level token "${t}"`);
+  }
+}
+
+// Resolve a type name the way protoc does: innermost enclosing scope first.
+function resolve(type, scope, messages, enums) {
+  if (SCALARS.has(type)) return { kind: 'scalar', type };
+  const name = type.replace(/^hbb\./, '').replace(/^\./, '');
+  const parts = scope.split('.');
+  for (let i = parts.length; i >= 0; i--) {
+    const candidate = [...parts.slice(0, i), name].join('.');
+    if (messages[candidate]) return { kind: 'message', type: candidate };
+    if (enums[candidate]) return { kind: 'enum', type: candidate };
+  }
+  throw new Error(`${scope}: unknown type "${type}"`);
+}
+
+export function generate() {
+  const messages = {};
+  const enums = {};
+  for (const file of FILES) parseFile(file, messages, enums);
+
+  const outMessages = {};
+  for (const [name, fields] of Object.entries(messages).sort(([a], [b]) => a.localeCompare(b))) {
+    outMessages[name] = fields.map((f) => {
+      const r = resolve(f.type, name, messages, enums);
+      // [number, name, type, kind, repeated, oneof]
+      return [f.no, f.name, r.type, r.kind[0], f.repeated ? 1 : 0, f.oneof ?? ''];
+    });
+  }
+  const outEnums = Object.fromEntries(Object.entries(enums).sort(([a], [b]) => a.localeCompare(b)));
+  return `// Generated by tools/gen-proto.mjs from proto/*.proto. Do not edit.
+// RustDesk protocol definitions: © Purslane Ltd and RustDesk contributors, AGPL-3.0.
+//
+// messages: { Name: [[fieldNumber, name, type, kind (s=scalar, m=message, e=enum), repeated, oneof], ...] }
+export const messages = ${JSON.stringify(outMessages)};
+export const enums = ${JSON.stringify(outEnums)};
+`;
+}
+
+if (process.argv[1] === import.meta.filename) {
+  const code = generate();
+  if (process.argv.includes('--check')) {
+    const current = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8') : '';
+    if (current !== code) {
+      console.error('public/assets/client/schema.js is out of date: run npm run gen-proto');
+      process.exit(1);
+    }
+  } else {
+    fs.writeFileSync(OUT, code);
+    console.log(`wrote ${path.relative(ROOT, OUT)} (${code.length} bytes)`);
+  }
+}

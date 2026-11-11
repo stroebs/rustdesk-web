@@ -14,6 +14,9 @@ implements the client-side **"API server"** protocol and adds a web console on t
   (OS, hostname, CPU, memory, version), owner, notes, and peers imported from hbbs.
 - **Audit logs.** Incoming connections (who, from where, how long, what type), file
   transfers, and an activity log of sign-ins and admin changes.
+- **Remote sessions in the browser.** Connect to any device from the console, with no
+  RustDesk app on the admin's machine: view the screen, use mouse and keyboard, send
+  Ctrl+Alt+Del. Sessions are relayed through your own hbbs/hbbr and end-to-end encrypted.
 - **Client setup.** Generates the importable configuration string and the
   self-configuring Windows installer file name.
 
@@ -70,6 +73,37 @@ ADMIN_PASSWORD='choose-a-strong-one' npm start
 
 Data goes to `./data/rustdesk-web.sqlite3` by default.
 
+## Remote sessions in the browser
+
+Open **Remote session** in the sidebar, or the connect icon next to a device, enter the
+password shown on that device, and the session opens in the browser.
+
+How it works: the browser speaks RustDesk's own protocol over WebSocket. The console
+proxies `/ws/id` to hbbs (port 21118) and `/ws/relay` to hbbr (port 21119), only for
+signed-in administrators. The session is end-to-end encrypted between the browser and the
+device (NaCl, the same key exchange as the native client), so the console and the relay
+cannot read it. The device's identity is verified against your server's public key, and
+the client refuses to connect if that check fails.
+
+Requirements:
+
+- **HTTPS.** Browsers only decode video (WebCodecs) on secure pages. Serve the console
+  over HTTPS, through a reverse proxy or with `TLS_CERT_FILE`/`TLS_KEY_FILE`.
+  `http://localhost` also works, for testing.
+- **The server's public key** in Settings (or `HBBS_KEY_FILE`/`SERVER_KEY`).
+- **The console can reach hbbs/hbbr** on their WebSocket ports. By default it uses the ID
+  and relay servers from Settings with ports 21118/21119. Set `HBBS_WS_URL` and
+  `HBBR_WS_URL` if it must use other addresses (for example when the ID server name only
+  resolves publicly).
+- A current Chrome, Edge, Firefox or Safari.
+
+Current limitations: no clipboard sync, file transfer, audio or multi-monitor switching,
+and the remote cursor is not drawn (your own pointer is used). Sessions always use the
+relay; direct connections are not possible from a browser.
+
+Starting a session is recorded in **Activity**, and the device reports it under
+**Connections** like any other session, as coming from `rustdesk-web` with the admin's name.
+
 ## Configuring RustDesk clients
 
 In the RustDesk client, open **Settings → Network → ID/Relay server** and either paste
@@ -106,6 +140,9 @@ in the console. Values saved there override the environment.
 | `HBBS_SYNC_SECONDS`       | `60`                          | How often to import peers from hbbs. |
 | `ID_SERVER`, `RELAY_SERVER`, `API_SERVER`, `SERVER_KEY` | | Defaults for the client configuration. |
 | `PUID`, `PGID`            | `1000` (Docker image)         | User/group the server runs as in Docker. The container starts as root only to take ownership of the data directory, then drops to this user. |
+| `TLS_CERT_FILE`, `TLS_KEY_FILE` |                     | PEM certificate and key: serve HTTPS directly (needed for browser sessions unless a proxy terminates TLS). |
+| `HBBS_WS_URL`, `HBBR_WS_URL` | `ws://<ID server>:21118`, `ws://<relay>:21119` | Where the console forwards browser sessions. |
+| `SOURCE_URL`              | this repository               | Source code link shown in the UI (AGPL). Point it at your fork if you modify the code. |
 | `TRUST_PROXY`             | `false`                       | Trust `X-Forwarded-For`/`-Proto` from one reverse proxy. |
 | `COOKIE_SECURE`           | `auto`                        | `auto` marks the cookie `Secure` on HTTPS requests; or `true`/`false`. |
 | `ONLINE_THRESHOLD_SECONDS`| `60`                          | A device counts as online if its last heartbeat is newer than this. |
@@ -125,7 +162,10 @@ rustdesk.example.com {
 ```
 
 Set `TRUST_PROXY=true` so client IPs and HTTPS detection work, and use
-`https://rustdesk.example.com` as the API server in clients.
+`https://rustdesk.example.com` as the API server in clients. Caddy proxies the WebSocket
+upgrades for browser sessions automatically; with nginx, add
+`proxy_set_header Upgrade $http_upgrade;` and `proxy_set_header Connection "upgrade";` for
+`/ws/`.
 
 ## Command-line tools
 
@@ -153,11 +193,29 @@ In Docker: `docker compose exec rustdesk-web node src/cli.js reset-password admi
 
 ```bash
 npm run dev     # auto-restart on change
-npm test        # 28 tests covering the client protocol, admin API and hbbs import
+npm test        # unit and API tests
+npm run e2e     # browser-client protocol test against a real RustDesk peer (Docker)
+```
+
+`testbed/` is a complete environment for trying the browser client: hbbs, hbbr, a
+headless RustDesk peer showing a clock and a terminal, and the console built from this
+checkout.
+
+```bash
+docker compose -f testbed/compose.yml up -d --build
+# open http://localhost:21180, sign in as admin / testbed-admin,
+# connect to 123456789 with password testbed-password
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the project layout and conventions.
 
 ## License
 
-[MIT](LICENSE). Icons are adapted from [Feather](https://feathericons.com) (MIT).
+[GNU AGPL-3.0](LICENSE), the same license as RustDesk itself. If you run a modified
+version as a network service, you must offer its source code to the people who use it.
+
+Versions up to and including 0.1.3 were released under the MIT license.
+
+The browser client implements RustDesk's protocol using its protocol definitions (`proto/`,
+AGPL-3.0, © Purslane Ltd). Icons are adapted from [Feather](https://feathericons.com) (MIT).
+TweetNaCl-js is vendored under its public-domain dedication (Unlicense).

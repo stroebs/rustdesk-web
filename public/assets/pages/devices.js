@@ -74,6 +74,7 @@ async function showDevice(id, users, reload) {
     footer: [
       h('button', { type: 'button', class: 'btn danger', onclick: () => { m.close(); deleteDevice(d, reload); } }, icon('trash'), 'Remove'),
       h('span', { class: 'spacer' }),
+      h('a', { class: 'btn', href: `#/connect/${enc(d.id)}`, target: '_blank', rel: 'noopener' }, icon('remote'), 'Connect'),
       h('button', { type: 'button', class: 'btn primary', onclick: () => { m.close(); editDevice(d, users, reload); } }, icon('edit'), 'Edit'),
     ],
   });
@@ -121,6 +122,7 @@ export default {
           label: '',
           class: 'actions',
           render: (d) => [
+            h('a', { class: 'icon-btn', href: `#/connect/${enc(d.id)}`, target: '_blank', rel: 'noopener', title: 'Connect in a new tab', 'aria-label': `Connect to ${d.id}` }, icon('remote')),
             h('button', { type: 'button', class: 'icon-btn', title: 'Edit', 'aria-label': `Edit ${d.id}`, onclick: () => editDevice(d, users, () => list.reload()) }, icon('edit')),
             h('button', { type: 'button', class: 'icon-btn danger', title: 'Remove', 'aria-label': `Remove ${d.id}`, onclick: () => deleteDevice(d, () => list.reload()) }, icon('trash')),
           ],

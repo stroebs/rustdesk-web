@@ -7,3 +7,6 @@ hbbs-data
 test
 *.md
 !README.md
+testbed
+tools
+proto
