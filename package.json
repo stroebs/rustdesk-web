@@ -3,7 +3,7 @@
   "version": "0.1.3",
   "description": "Self-hosted admin web interface and API server for RustDesk OSS (hbbs/hbbr)",
   "type": "module",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "author": "Den Stroebel",
   "keywords": [
     "rustdesk",
@@ -23,6 +23,8 @@
     "start": "node --disable-warning=ExperimentalWarning src/server.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
     "cli": "node --disable-warning=ExperimentalWarning src/cli.js",
-    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
+    "gen-proto": "node tools/gen-proto.mjs",
+    "e2e": "test/e2e/run.sh"
   }
 }
