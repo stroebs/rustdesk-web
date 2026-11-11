@@ -3,6 +3,7 @@
 //   node test/e2e/testbed-session.mjs [password]
 import { execFileSync } from 'node:child_process';
 import { RemoteSession } from '../../public/assets/client/session.js';
+import { sha256 } from '../../public/assets/client/sha256.js';
 
 const peer = (cmd, input) =>
   execFileSync('docker', ['compose', '-f', 'testbed/compose.yml', 'exec', '-T', 'peer', 'sh', '-c', cmd], { input }).toString();
@@ -81,7 +82,24 @@ session.sendClipboardText(toDevice);
 let onDevice = '';
 await until(() => (onDevice = peer('DISPLAY=:99 xclip -o -selection clipboard 2>/dev/null || true')) === toDevice, 10000, `device clipboard to become "${toDevice}" (is "${onDevice}")`);
 console.log('OK clipboard to device');
+session.close();
+
+// 5. Log in again with only the saved form of the password (sha256(password + salt)), as
+// the console does for remembered passwords: the device's challenge is answered from it.
+const saved = session.passwordHash;
+if (saved?.hash?.length !== 32) fail('no password hash after a password login');
+let challenged = false;
+const again = new RemoteSession({ openSocket: (kind) => new WebSocket(urls[kind]), peerId: '123456789', key, myName: 'e2e test (saved password)' });
+await again.connect({
+  answer: async (salt, challenge) => {
+    challenged = true;
+    if (salt !== saved.salt) fail(`device salt changed: ${salt} vs ${saved.salt}`);
+    return sha256(saved.hash, new TextEncoder().encode(challenge));
+  },
+}).catch((err) => fail(`login with the saved password failed (${err.code}): ${err.message}`));
+if (!challenged) fail('device never sent a challenge');
+again.close();
+console.log('OK login with saved password');
 
 console.log('OK: all checks passed');
-session.close();
 process.exit(0);

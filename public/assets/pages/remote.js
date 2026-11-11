@@ -4,7 +4,10 @@ import { VideoRenderer, detectDecoders, videoSupported } from '../client/video.j
 import { api, enc } from '../lib/api.js';
 import { clear, h } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
-import { errorBox, field, input, toast } from '../lib/ui.js';
+import { checkbox, errorBox, field, input, toast } from '../lib/ui.js';
+
+const toBase64 = (bytes) => btoa(String.fromCharCode(...bytes));
+const fromBase64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
 const wsUrl = (kind) => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${kind}`;
 
@@ -48,11 +51,34 @@ async function session(root, peerId, user) {
   const problem = videoProblem();
   if (problem) return root.append(shell(peerId, problem));
 
-  const [cfg, decoders, device] = await Promise.all([
+  const passwordUrl = `/remote/passwords/${enc(peerId)}`;
+  const [cfg, decoders, device, savedInfo] = await Promise.all([
     api.get('/remote/config'),
     detectDecoders(),
     api.get(`/devices/${enc(peerId)}`).then((r) => r.device).catch(() => null),
+    api.get(passwordUrl).catch(() => ({ saved: false })),
   ]);
+  // A password saved for this device (by this administrator) is used without asking.
+  let saved = savedInfo.saved;
+  let remember = true;
+  let savedProblem = null;
+  // Logs in with the saved password: the console answers the device's challenge.
+  const SAVED = {
+    async answer(salt, challenge) {
+      try {
+        return fromBase64((await api.post(`${passwordUrl}/answer`, { salt, challenge })).answer);
+      } catch (err) {
+        if (err.status !== 404 && err.status !== 409) throw err;
+        saved = false;
+        savedProblem = err.status === 409 ? 'The password on the device has changed.' : null;
+        return null;
+      }
+    },
+  };
+  const forgetPassword = async () => {
+    saved = false;
+    await api.del(passwordUrl);
+  };
   const title = device?.hostname ? `${device.hostname} · ${peerId}` : peerId;
   if (!cfg.ready) {
     return root.append(shell(title, notice('Remote sessions are not set up yet', 'The console needs a little more configuration first:',
@@ -76,9 +102,13 @@ async function session(root, peerId, user) {
     const pw = input('password', { type: 'password', autocomplete: 'off', required: true });
     const err = h('div', { class: ['form-error', !error && 'hidden'], role: 'alert' }, error ?? '');
     const submit = h('button', { type: 'submit', class: 'btn primary' }, 'Connect');
-    const form = h('form', { class: 'form' }, err, field('Password', pw, 'The permanent or one-time password shown on the remote device.'), submit);
+    const rememberBox = checkbox('remember', 'Remember password', remember);
+    const form = h('form', { class: 'form' }, err, field('Password', pw, 'The permanent or one-time password shown on the remote device.'),
+      h('div', { class: 'stack-sm' }, rememberBox, h('span', { class: 'field-hint' }, 'Saved for your account only, as a salted hash (like the RustDesk app), never the password itself.')),
+      submit);
     form.addEventListener('submit', (e) => {
       e.preventDefault();
+      remember = form.elements.remember.checked;
       start(pw.value);
     });
     clear(stage).append(h('div', { class: 'card remote-card' }, h('div', { class: 'card-body stack' }, h('h2', null, `Connect to ${title}`), form)));
@@ -87,11 +117,12 @@ async function session(root, peerId, user) {
 
   function showClosed(reason) {
     clear(stage).append(notice('Session ended', reason || 'The connection was closed.',
-      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: () => showPasswordForm() }, 'Reconnect'), h('a', { class: 'btn', href: '#/devices' }, 'Back to devices'))));
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: () => (saved ? start(SAVED) : showPasswordForm()) }, 'Reconnect'), h('a', { class: 'btn', href: '#/devices' }, 'Back to devices'))));
     status.textContent = '';
   }
 
-  async function start(password) {
+  async function start(credential) {
+    const usingSaved = credential === SAVED;
     const s = new RemoteSession({
       openSocket: (kind) => new WebSocket(wsUrl(kind)),
       peerId,
@@ -105,10 +136,20 @@ async function session(root, peerId, user) {
       clear(stage).append(h('div', { class: 'remote-wait' }, h('div', { class: 'spinner' }), e.detail));
     });
     try {
-      await s.connect(password);
+      await s.connect(credential);
     } catch (err) {
       s.close();
-      return err.code === 'bad_password' ? showPasswordForm('Wrong password.') : showClosed(err.message);
+      if (err.code !== 'bad_password') return showClosed(err.message);
+      if (!usingSaved) return showPasswordForm('Wrong password.');
+      // The saved password was refused (or is gone): forget it and ask.
+      if (saved) await forgetPassword().catch(() => {});
+      const why = savedProblem ?? 'The saved password no longer works.';
+      savedProblem = null;
+      return showPasswordForm(`${why} Enter the current password.`);
+    }
+    if (!usingSaved && remember && s.passwordHash) {
+      api.put(passwordUrl, { salt: s.passwordHash.salt, hash: toBase64(s.passwordHash.hash) })
+        .then(() => { saved = true; current?.showForget(); }, () => toast('Could not save the password', 'error'));
     }
     api.post('/remote/sessions', { peer_id: peerId, detail: `kx v${s.kxVersion}` }).catch(() => {});
     current = attach(s);
@@ -275,6 +316,18 @@ async function session(root, peerId, user) {
       h('button', { type: 'button', class: 'btn sm', onclick: () => (document.fullscreenElement ? document.exitFullscreen() : view.requestFullscreen?.()) }, 'Full screen'),
       h('button', { type: 'button', class: 'btn sm danger', onclick: () => { s.close(); cleanup(); showClosed('You disconnected.'); } }, 'Disconnect'),
     );
+    const forget = h('button', {
+      type: 'button',
+      class: 'btn sm',
+      title: 'Ask for the password next time',
+      onclick: async () => {
+        await forgetPassword();
+        forget.remove();
+        toast('Saved password forgotten');
+      },
+    }, 'Forget password');
+    const showForget = () => { if (!forget.isConnected) tools.insertBefore(forget, tools.lastChild); };
+    if (saved) showForget();
     bar.append(tools);
     canvas.focus();
 
@@ -288,7 +341,7 @@ async function session(root, peerId, user) {
       tools.remove();
       current = null;
     }
-    return { session: s, cleanup };
+    return { session: s, cleanup, showForget };
   }
 
   // Leaving the page ends the session.
@@ -302,7 +355,8 @@ async function session(root, peerId, user) {
   window.addEventListener('hashchange', onHash);
   window.addEventListener('beforeunload', () => current?.session.close(), { once: true });
 
-  showPasswordForm();
+  if (saved) start(SAVED);
+  else showPasswordForm();
 }
 
 export default {

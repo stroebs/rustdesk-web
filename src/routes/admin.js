@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { hashPassword, validatePassword } from '../auth.js';
 import { AccessError, normalizeTeamDomain, parseAudiences, parseProxyList } from '../cfaccess.js';
 import { effectiveServerConfig, encodeConfigString, installerName } from '../serverconfig.js';
@@ -654,6 +655,69 @@ export function registerAdminRoutes(r, app) {
     const peerId = cleanId(b.peer_id);
     if (!peerId) throw new HttpError(400, 'Missing peer_id');
     app.log(ctx, 'web_session', peerId, str(b.detail, 200));
+    return ctx.empty();
+  }));
+
+  // --- Saved device passwords (per administrator) ---------------------------
+  // The browser saves sha256(password + salt) after a successful login, as the
+  // RustDesk client does. It never gets it back: to log in again it sends the
+  // device's salt and challenge here and receives the answer.
+  const savedPassword = (ctx) => {
+    const peerId = cleanId(ctx.params.peer);
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(peerId)) throw new HttpError(400, 'Invalid device ID');
+    return { peerId, row: store.get('SELECT * FROM remote_passwords WHERE user_id = ? AND peer_id = ?', ctx.user.id, peerId) };
+  };
+
+  r.get('/api/admin/remote/passwords', admin((ctx) => ({
+    items: store.all(
+      `SELECT p.peer_id, p.created_at, p.last_used_at, d.hostname
+       FROM remote_passwords p LEFT JOIN devices d ON d.id = p.peer_id
+       WHERE p.user_id = ? ORDER BY COALESCE(d.hostname, p.peer_id)`,
+      ctx.user.id,
+    ),
+  })));
+
+  r.get('/api/admin/remote/passwords/:peer', admin((ctx) => {
+    const { row } = savedPassword(ctx);
+    return { saved: Boolean(row), created_at: row?.created_at ?? null, last_used_at: row?.last_used_at ?? null };
+  }));
+
+  r.put('/api/admin/remote/passwords/:peer', admin(async (ctx) => {
+    const { peerId, row } = savedPassword(ctx);
+    const b = await ctx.body();
+    const salt = typeof b.salt === 'string' ? b.salt : '';
+    const hash = typeof b.hash === 'string' && /^[A-Za-z0-9+/]{43}=$/.test(b.hash) ? Buffer.from(b.hash, 'base64') : null;
+    if (!salt || salt.length > 256) throw new HttpError(400, 'Invalid salt');
+    if (hash?.length !== 32) throw new HttpError(400, 'hash must be 32 bytes, base64');
+    store.run(
+      `INSERT INTO remote_passwords (user_id, peer_id, salt, hash, created_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (user_id, peer_id) DO UPDATE SET salt = excluded.salt, hash = excluded.hash, created_at = excluded.created_at, last_used_at = excluded.last_used_at`,
+      ctx.user.id, peerId, salt, hash, Date.now(), Date.now(),
+    );
+    if (!row) app.log(ctx, 'remote_password_save', peerId);
+    return ctx.empty();
+  }));
+
+  r.post('/api/admin/remote/passwords/:peer/answer', admin(async (ctx) => {
+    const { peerId, row } = savedPassword(ctx);
+    if (!row) throw new HttpError(404, 'No saved password for this device');
+    const b = await ctx.body();
+    if (typeof b.salt !== 'string' || typeof b.challenge !== 'string' || b.challenge.length > 256) throw new HttpError(400, 'salt and challenge are required');
+    // A new salt means the device's password was changed: the saved one is useless.
+    if (b.salt !== row.salt) {
+      store.run('DELETE FROM remote_passwords WHERE user_id = ? AND peer_id = ?', ctx.user.id, peerId);
+      throw new HttpError(409, 'The device\'s password has changed since it was saved');
+    }
+    store.run('UPDATE remote_passwords SET last_used_at = ? WHERE user_id = ? AND peer_id = ?', Date.now(), ctx.user.id, peerId);
+    const answer = crypto.createHash('sha256').update(row.hash).update(b.challenge, 'utf8').digest('base64');
+    return { answer };
+  }));
+
+  r.delete('/api/admin/remote/passwords/:peer', admin((ctx) => {
+    const { peerId } = savedPassword(ctx);
+    if (store.run('DELETE FROM remote_passwords WHERE user_id = ? AND peer_id = ?', ctx.user.id, peerId).changes) {
+      app.log(ctx, 'remote_password_forget', peerId);
+    }
     return ctx.empty();
   }));
 

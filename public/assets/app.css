@@ -139,6 +139,7 @@ input[type="color"] { width: 42px; height: 34px; padding: 2px; border: 1px solid
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field-label { font-weight: 550; font-size: 13px; }
 .field-hint { color: var(--muted); font-size: 12px; }
+.stack-sm { display: flex; flex-direction: column; gap: 4px; }
 .check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 .check input { width: 16px; height: 16px; accent-color: var(--accent); }
 .form { display: flex; flex-direction: column; gap: 14px; }

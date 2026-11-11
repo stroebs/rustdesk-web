@@ -81,6 +81,13 @@ Data goes to `./data/rustdesk-web.sqlite3` by default.
 Open **Remote session** in the sidebar, or the connect icon next to a device, enter the
 password shown on that device, and the session opens in the browser.
 
+**Remember password** (checked by default) saves the password for your console account,
+so the next session to that device opens without asking. Like the RustDesk app, the
+console stores only `sha256(password + device salt)`, never the password, and it never
+sends that back to the browser: it answers the device's login challenge itself. A saved
+password is dropped when the device rejects it or its password changes. Forget one from
+the session toolbar or under **My account → Saved device passwords**.
+
 How it works: the browser speaks RustDesk's own protocol over WebSocket. The console
 proxies `/ws/id` to hbbs (port 21118) and `/ws/relay` to hbbr (port 21119), only for
 signed-in administrators. The session is end-to-end encrypted between the browser and the

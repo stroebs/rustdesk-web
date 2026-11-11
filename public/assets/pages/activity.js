@@ -10,6 +10,8 @@ const LABELS = {
   password_change: ['Password changed', 'accent'],
   cloudflare_link: ['Cloudflare Access linked', 'accent'],
   cloudflare_unlink: ['Cloudflare Access unlinked', 'accent'],
+  remote_password_save: ['Device password saved', ''],
+  remote_password_forget: ['Device password forgotten', ''],
   user_create: ['User created', 'accent'],
   user_update: ['User updated', 'accent'],
   user_delete: ['User deleted', 'warn'],
