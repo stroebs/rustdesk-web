@@ -6,7 +6,8 @@ Thanks for helping out! A few ground rules keep this project easy to run and rev
 
 - **No runtime dependencies.** The server uses only Node.js built-ins
   (`node:http`, `node:sqlite`, `node:crypto`). The only third-party code is the
-  vendored tweetnacl-js. If you need a dependency, open an issue first.
+  vendored tweetnacl-js and fzstd. If you need a dependency, open an issue first.
+- **Node.js 24 or newer.** The entry points refuse to start on older versions.
 - **No build step.** The UI is plain ES modules served as-is from `public/`.
 - **Never use `innerHTML`.** Build DOM with the `h()` helper from
   `public/assets/lib/dom.js` so server data is always treated as text. The CSP
@@ -42,7 +43,7 @@ public/
   assets/pages/*.js  one module per console page
   assets/client/     browser RustDesk client: session (protocol), protobuf runtime,
                      generated schema, crypto helpers, video decoding, input mapping
-  assets/vendor/     tweetnacl-js (unmodified, see the file header)
+  assets/vendor/     tweetnacl-js and fzstd (unmodified, see the file headers)
 proto/               RustDesk protocol definitions (AGPL-3.0, see proto/README.md)
 tools/gen-proto.mjs  generates assets/client/schema.js from proto/
 testbed/             Docker environment with a real RustDesk peer
