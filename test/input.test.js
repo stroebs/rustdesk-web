@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buttonMask, ctrlAltDelEvent, keyEventFor, modifiersOf, toRemote, wheelEvent } from '../public/assets/client/input.js';
+import { buttonMask, ctrlAltDelEvent, isPasteShortcut, keyEventFor, modifiersOf, pasteKeyEvent, toRemote, wheelEvent } from '../public/assets/client/input.js';
 import { enums } from '../public/assets/client/protobuf.js';
 
 const CK = enums.ControlKey;
@@ -36,6 +36,18 @@ describe('keyboard mapping (legacy mode)', () => {
     assert.equal(keyEventFor(key('Dead'), true), null);
     assert.equal(keyEventFor(key('a', { isComposing: true }), true), null);
     assert.equal(keyEventFor(key('AudioVolumeUp'), true), null);
+  });
+
+  it('recognises the paste shortcut (Ctrl+V, Cmd+V, not AltGr+V or plain v)', () => {
+    assert.equal(isPasteShortcut(key('v', { ctrlKey: true })), true);
+    assert.equal(isPasteShortcut(key('V', { metaKey: true, shiftKey: true })), true);
+    assert.equal(isPasteShortcut(key('v', { ctrlKey: true, altKey: true })), false);
+    assert.equal(isPasteShortcut(key('v')), false);
+  });
+
+  it("sends the device's own paste keystroke", () => {
+    assert.deepEqual(pasteKeyEvent('Windows'), { chr: 118, press: true, modifiers: [CK.Control] });
+    assert.deepEqual(pasteKeyEvent('Mac OS'), { chr: 118, press: true, modifiers: [CK.Meta] });
   });
 
   it('sends Ctrl+Alt+Del like the native client', () => {
