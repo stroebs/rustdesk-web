@@ -14,9 +14,14 @@ LABEL org.opencontainers.image.title="rustdesk-web" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}"
 
+# The server starts as root only to take ownership of the data directory (so bind
+# mounts that Docker created as root:root work), then drops to PUID:PGID before
+# opening the database. Set PUID/PGID to match the owner of a host directory.
 ENV NODE_ENV=production \
     DATA_DIR=/data \
-    PORT=21114
+    PORT=21114 \
+    PUID=1000 \
+    PGID=1000
 
 WORKDIR /app
 COPY package.json ./
@@ -24,7 +29,6 @@ COPY src ./src
 COPY public ./public
 COPY --from=prep --chown=node:node /out/data /data
 
-USER node
 VOLUME ["/data"]
 EXPOSE 21114
 

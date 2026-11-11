@@ -105,6 +105,7 @@ in the console. Values saved there override the environment.
 | `HBBS_KEY_FILE`           |                               | Path to hbbs's `id_ed25519.pub`, shown as the public key. |
 | `HBBS_SYNC_SECONDS`       | `60`                          | How often to import peers from hbbs. |
 | `ID_SERVER`, `RELAY_SERVER`, `API_SERVER`, `SERVER_KEY` | | Defaults for the client configuration. |
+| `PUID`, `PGID`            | `1000` (Docker image)         | User/group the server runs as in Docker. The container starts as root only to take ownership of the data directory, then drops to this user. |
 | `TRUST_PROXY`             | `false`                       | Trust `X-Forwarded-For`/`-Proto` from one reverse proxy. |
 | `COOKIE_SECURE`           | `auto`                        | `auto` marks the cookie `Secure` on HTTPS requests; or `true`/`false`. |
 | `ONLINE_THRESHOLD_SECONDS`| `60`                          | A device counts as online if its last heartbeat is newer than this. |
