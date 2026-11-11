@@ -118,6 +118,14 @@ const MIGRATIONS = [
   ALTER TABLE conn_logs ADD COLUMN end_inferred INTEGER NOT NULL DEFAULT 0;
   CREATE INDEX conn_logs_open ON conn_logs(device_id) WHERE ended_at IS NULL;
   `,
+  // v3: Cloudflare Access sign-in. A user may link one Access identity (e-mail);
+  // sessions remember how they were created.
+  `
+  ALTER TABLE users ADD COLUMN cf_email TEXT NOT NULL DEFAULT '';
+  ALTER TABLE users ADD COLUMN cf_linked_at INTEGER;
+  CREATE UNIQUE INDEX users_cf_email ON users(cf_email COLLATE NOCASE) WHERE cf_email <> '';
+  ALTER TABLE tokens ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'password';
+  `,
 ];
 
 // node:sqlite rejects booleans and undefined as bind values.

@@ -1,7 +1,63 @@
 import { api } from '../lib/api.js';
 import { h } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
-import { field, fmtDate, input, pageHeader, toast } from '../lib/ui.js';
+import { badge, confirmDialog, errorBox, field, fmtDate, input, pageHeader, toast } from '../lib/ui.js';
+
+function cloudflareCard(session) {
+  const body = h('div', { class: 'card-body stack' }, h('p', { class: 'muted' }, 'Loading…'));
+  const card = h('div', { class: 'card' }, h('div', { class: 'card-header' }, icon('cloud'), h('h2', null, 'Cloudflare Access')), body);
+  const viaCloudflare = session.auth_method === 'cloudflare';
+
+  function draw(cf) {
+    const parts = [];
+    if (!cf.enabled) {
+      parts.push(h('p', { class: 'muted' }, 'Cloudflare Access sign-in is not enabled. An administrator can set it up under Settings → Cloudflare Zero Trust.'));
+    }
+    if (cf.linked_email) {
+      parts.push(h('dl', { class: 'kv' },
+        h('dt', null, 'Linked identity'), h('dd', null, cf.linked_email),
+        h('dt', null, 'Linked'), h('dd', null, fmtDate(cf.linked_at)),
+        h('dt', null, 'This session'), h('dd', null, viaCloudflare ? 'Signed in with Cloudflare Access' : 'Signed in with password'),
+      ));
+    }
+    if (cf.enabled) {
+      if (cf.error) parts.push(h('p', null, badge('Token rejected', 'danger'), ' ', cf.error));
+      else if (!cf.identity) parts.push(h('p', { class: 'muted' }, 'This page was not opened through the console\'s Cloudflare Access application, so there is no identity to link.'));
+      else if (cf.identity.email !== cf.linked_email) {
+        parts.push(h('p', null, `You are signed in to Cloudflare Access as `, h('strong', null, cf.identity.email), '.'));
+      }
+      if (!cf.linked_email || cf.identity?.email === cf.linked_email) {
+        parts.push(h('p', { class: 'muted small' }, cf.auto_login
+          ? 'Once linked, opening the console through Cloudflare Access signs you in automatically.'
+          : 'Once linked, the sign-in page offers to continue with your Cloudflare Access identity.'));
+      }
+    }
+    const actions = h('div', { class: 'row' });
+    if (cf.enabled && cf.identity && cf.identity.email !== cf.linked_email) {
+      actions.append(h('button', { type: 'button', class: 'btn primary', onclick: async () => {
+        draw(await api.post('/me/cloudflare'));
+        toast(`Linked ${cf.identity.email}`);
+      } }, icon('link'), cf.linked_email ? `Link ${cf.identity.email} instead` : `Link ${cf.identity.email}`));
+    }
+    if (cf.linked_email) {
+      actions.append(h('button', {
+        type: 'button', class: 'btn danger', disabled: viaCloudflare,
+        title: viaCloudflare ? 'Sign in with your password to unlink' : null,
+        onclick: async () => {
+          if (!(await confirmDialog(`Unlink ${cf.linked_email}? You will no longer be signed in with Cloudflare Access.`, { confirmLabel: 'Unlink' }))) return;
+          draw(await api.del('/me/cloudflare'));
+          toast('Cloudflare Access unlinked');
+        },
+      }, 'Unlink'));
+      if (viaCloudflare) actions.append(h('span', { class: 'muted small' }, 'Sign in with your password to unlink.'));
+    }
+    if (actions.childNodes.length) parts.push(actions);
+    body.replaceChildren(...parts);
+  }
+
+  api.get('/me/cloudflare').then(draw, (err) => body.replaceChildren(errorBox(err)));
+  return card;
+}
 
 export default {
   title: 'My account',
@@ -45,6 +101,7 @@ export default {
         )),
       ),
       h('div', { class: 'card' }, h('div', { class: 'card-header' }, icon('lock'), h('h2', null, 'Change password')), form),
+      cloudflareCard(session),
     ));
   },
 };

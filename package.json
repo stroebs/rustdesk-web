@@ -1,6 +1,6 @@
 {
   "name": "rustdesk-web",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Self-hosted admin web interface and API server for RustDesk OSS (hbbs/hbbr)",
   "type": "module",
   "license": "AGPL-3.0-only",

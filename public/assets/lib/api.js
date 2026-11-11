@@ -34,7 +34,7 @@ async function request(method, path, body) {
     }
   }
   if (!res.ok) {
-    if (res.status === 401 && path !== '/login') unauthorizedHandler();
+    if (res.status === 401 && !path.startsWith('/login')) unauthorizedHandler();
     throw new ApiError(res.status, data?.error || res.statusText || 'Request failed');
   }
   return data;

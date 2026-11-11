@@ -8,6 +8,8 @@ const LABELS = {
   client_login_failed: ['Client sign-in failed', 'danger'],
   client_alarm: ['Client alarm', 'warn'],
   password_change: ['Password changed', 'accent'],
+  cloudflare_link: ['Cloudflare Access linked', 'accent'],
+  cloudflare_unlink: ['Cloudflare Access unlinked', 'accent'],
   user_create: ['User created', 'accent'],
   user_update: ['User updated', 'accent'],
   user_delete: ['User deleted', 'warn'],
