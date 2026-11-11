@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
@@ -14,6 +15,24 @@ import { HttpError } from './util.js';
 const pkg = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../package.json'), 'utf8'));
 const HOUR = 3600 * 1000;
 
+/**
+ * Identifies the UI build: changes whenever any file under public/ changes. Assets
+ * are served under /v/<buildId>/, so a new release gets new URLs that no browser
+ * or CDN cache (e.g. a Cloudflare Browser Cache TTL) can serve stale.
+ */
+function computeBuildId(dir) {
+  const hash = crypto.createHash('sha256');
+  const walk = (d) => {
+    for (const entry of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const p = path.join(d, entry.name);
+      if (entry.isDirectory()) walk(p);
+      else hash.update(path.relative(dir, p)).update('\0').update(fs.readFileSync(p));
+    }
+  };
+  walk(dir);
+  return hash.digest('hex').slice(0, 12);
+}
+
 export function createApp(config, { logger = console } = {}) {
   const store = new Store(config.dbPath);
   const app = {
@@ -21,6 +40,7 @@ export function createApp(config, { logger = console } = {}) {
     store,
     logger,
     version: pkg.version,
+    buildId: null,
     auth: new Auth(store, config),
     hbbs: new Hbbs(store, config),
     log(ctx, action, target = '', detail = '') {
@@ -30,6 +50,12 @@ export function createApp(config, { logger = console } = {}) {
       );
     },
   };
+
+  const buildId = computeBuildId(config.publicDir);
+  app.buildId = buildId;
+  const indexHtml = fs.readFileSync(path.join(config.publicDir, 'index.html'), 'utf8')
+    .replace(/(href|src)="\/assets\//g, `$1="/v/${buildId}/assets/`);
+  const VERSIONED = /^\/v\/([0-9a-f]+)(\/.*)$/;
 
   const router = new Router();
   router.get('/api/health', () => ({ ok: true, version: app.version }));
@@ -50,8 +76,21 @@ export function createApp(config, { logger = console } = {}) {
           if (result === undefined || result === null) ctx.empty();
           else ctx.json(result);
         }
+      } else if (ctx.path === '/' || ctx.path === '/index.html') {
+        if (ctx.method !== 'GET' && ctx.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'Content-Length': Buffer.byteLength(indexHtml) });
+        res.end(ctx.method === 'HEAD' ? undefined : indexHtml);
       } else {
-        await serveStatic(ctx, config.publicDir);
+        const m = VERSIONED.exec(ctx.path);
+        if (m) {
+          ctx.path = m[2];
+          // Current build: never changes under this URL. An older build's URL (a page
+          // loaded before an upgrade) still gets today's file, just not cached.
+          const cacheControl = m[1] === buildId ? 'public, max-age=31536000, immutable' : 'no-cache';
+          await serveStatic(ctx, config.publicDir, { cacheControl });
+        } else {
+          await serveStatic(ctx, config.publicDir);
+        }
       }
     } catch (err) {
       if (res.headersSent) {
