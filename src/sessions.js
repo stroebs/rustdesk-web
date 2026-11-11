@@ -37,7 +37,7 @@ export function isActive(row, deviceLastSeen, deviceAlive, onlineSince) {
 /** Open connections reported by online devices that have no open log row. */
 export function unrecordedSessions(store, onlineSince) {
   const devices = store.all(
-    "SELECT id, hostname, alive_conns FROM devices WHERE last_seen_at >= ? AND alive_conns <> '[]'",
+    "SELECT id, hostname, ip, alive_conns FROM devices WHERE last_seen_at >= ? AND alive_conns <> '[]'",
     onlineSince,
   );
   const out = [];
@@ -45,7 +45,7 @@ export function unrecordedSessions(store, onlineSince) {
     const alive = parseAlive(d.alive_conns);
     const logged = new Set(store.all('SELECT conn_id FROM conn_logs WHERE device_id = ? AND ended_at IS NULL', d.id).map((r) => r.conn_id));
     const count = alive.filter((id) => !logged.has(id)).length;
-    if (count) out.push({ device_id: d.id, hostname: d.hostname, count });
+    if (count) out.push({ device_id: d.id, hostname: d.hostname, ip: d.ip ?? '', count });
   }
   return out;
 }
