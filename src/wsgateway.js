@@ -12,6 +12,7 @@
 
 import net from 'node:net';
 import tls from 'node:tls';
+import { clientIp } from './http.js';
 import { SESSION_COOKIE } from './routes/admin.js';
 import { effectiveServerConfig } from './serverconfig.js';
 
@@ -88,6 +89,7 @@ export function attachWsGateway(server, app) {
     const user = token ? await app.webUser(token, req.headers) : null;
     if (!user?.is_admin) return reject(socket, 401, 'Unauthorized');
 
+    const ip = clientIp(req, app.config.trustProxy, app.cloudflare.connectingIp(req));
     const target = gatewayTargets(app)[kind];
     if (!target) return reject(socket, 503, 'Service Unavailable');
     let url;
@@ -111,6 +113,9 @@ export function attachWsGateway(server, app) {
       for (const name of FORWARD_HEADERS) {
         if (req.headers[name]) lines.push(`${name}: ${req.headers[name]}`);
       }
+      // hbbs/hbbr take the peer address from X-Real-IP (as behind any WebSocket proxy);
+      // otherwise the device would log this container's address for the session.
+      if (net.isIP(ip)) lines.push(`X-Real-IP: ${ip}`);
       upstream.write(`${lines.join('\r\n')}\r\n\r\n`);
       if (head?.length) upstream.write(head);
       socket.setNoDelay(true);

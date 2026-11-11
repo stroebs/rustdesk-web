@@ -45,7 +45,8 @@ export class Router {
   }
 }
 
-function clientIp(req, trustProxy, forwardedIp) {
+/** The client's address: a vouched-for forwarded IP, else X-Forwarded-For (if trusted), else the socket peer. */
+export function clientIp(req, trustProxy, forwardedIp) {
   if (forwardedIp) return forwardedIp;
   let ip = req.socket.remoteAddress ?? '';
   if (trustProxy) {
