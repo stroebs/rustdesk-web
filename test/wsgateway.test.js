@@ -90,6 +90,10 @@ describe('WebSocket gateway', () => {
   it('requires an admin session', async () => {
     assert.equal((await upgrade(t.base, '/ws/id', { Origin: origin })).status, 401);
     assert.equal((await upgrade(t.base, '/ws/id', { Origin: origin, Cookie: 'rdw_session=bogus' })).status, 401);
+    // A session opened with Cloudflare Access needs a valid Access token on every request.
+    const adminId = t.app.store.get("SELECT id FROM users WHERE username = 'admin'").id;
+    const cfToken = t.app.auth.createToken(adminId, 'web', { method: 'cloudflare' });
+    assert.equal((await upgrade(t.base, '/ws/id', { Origin: origin, Cookie: `rdw_session=${cfToken}` })).status, 401);
   });
 
   it('refuses cross-site and Origin-less handshakes', async () => {

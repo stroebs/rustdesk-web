@@ -46,6 +46,10 @@ services:
       # ID_SERVER: rustdesk.example.com    # defaults for Settings > Client configuration
       # API_SERVER: https://rustdesk.example.com
       # TRUST_PROXY: "true"                # when behind a reverse proxy
+      # CF_ACCESS_TEAM_DOMAIN: myteam      # Cloudflare Access sign-in (also in Settings)
+      # CF_ACCESS_AUD: <application audience tag>
+      # CF_CLIENT_IP: "true"               # client IPs from CF-Connecting-IP...
+      # CF_TRUSTED_PROXIES: 10.0.0.5       # ...only when sent by this cloudflared host
     volumes:
       - ./web-data:/data
       # Mount the whole hbbs directory (not just the file) so SQLite can see the WAL files.

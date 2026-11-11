@@ -17,6 +17,9 @@ implements the client-side **"API server"** protocol and adds a web console on t
 - **Remote sessions in the browser.** Connect to any device from the console, with no
   RustDesk app on the admin's machine: view the screen, use mouse and keyboard, copy and
   paste text both ways, switch between the device's monitors, send Ctrl+Alt+Del. Sessions are relayed through your own hbbs/hbbr and end-to-end encrypted.
+- **Cloudflare Zero Trust.** Behind a Cloudflare Access application, administrators can
+  link their Access identity and are signed in automatically. Client IPs can be taken
+  from `CF-Connecting-IP`.
 - **Client setup.** Generates the importable configuration string and the
   self-configuring Windows installer file name.
 
@@ -132,8 +135,8 @@ After that, clients:
 
 ## Configuration
 
-All settings are environment variables. Client-facing addresses can also be changed
-in the console. Values saved there override the environment.
+All settings are environment variables. Client-facing addresses and the Cloudflare
+settings can also be changed in the console. Values saved there override the environment.
 
 | Variable                  | Default                       | Description |
 |---------------------------|-------------------------------|-------------|
@@ -152,6 +155,12 @@ in the console. Values saved there override the environment.
 | `HBBS_WS_URL`, `HBBR_WS_URL` | `ws://<ID server>:21118`, `ws://<relay>:21119` | Where the console forwards browser sessions. |
 | `SOURCE_URL`              | this repository               | Source code link shown in the UI (AGPL). Point it at your fork if you modify the code. |
 | `TRUST_PROXY`             | `false`                       | Trust `X-Forwarded-For`/`-Proto` from one reverse proxy. |
+| `CF_ACCESS_TEAM_DOMAIN`   |                               | Cloudflare Zero Trust team, e.g. `myteam` or `myteam.cloudflareaccess.com`. See [Cloudflare Zero Trust](#cloudflare-zero-trust). |
+| `CF_ACCESS_AUD`           |                               | Application Audience (AUD) tag(s) of the console's Access application, comma-separated. |
+| `CF_ACCESS_ENABLED`       | on when both of the above are set | Turn Access sign-in on or off. |
+| `CF_ACCESS_AUTO_LOGIN`    | `true`                        | Sign linked administrators in automatically; `false` shows a "Continue as" button instead. |
+| `CF_CLIENT_IP`            | `false`                       | Take client IPs from `CF-Connecting-IP`. Only when Cloudflare is the only way in. |
+| `CF_TRUSTED_PROXIES`      | *(any)*                       | IPs/CIDRs (comma-separated) allowed to set `CF-Connecting-IP`, e.g. your cloudflared host. |
 | `COOKIE_SECURE`           | `auto`                        | `auto` marks the cookie `Secure` on HTTPS requests; or `true`/`false`. |
 | `ONLINE_THRESHOLD_SECONDS`| `60`                          | A device counts as online if its last heartbeat is newer than this. |
 | `CLIENT_TOKEN_TTL_DAYS`   | `30`                          | Sliding lifetime of RustDesk client sign-ins. |
@@ -174,6 +183,38 @@ Set `TRUST_PROXY=true` so client IPs and HTTPS detection work, and use
 upgrades for browser sessions automatically; with nginx, add
 `proxy_set_header Upgrade $http_upgrade;` and `proxy_set_header Connection "upgrade";` for
 `/ws/`.
+
+### Cloudflare Zero Trust
+
+If the console is published through a Cloudflare Tunnel and protected by a Cloudflare
+Access application, administrators can use their Access sign-in instead of a password:
+
+1. In Zero Trust, open **Access → Applications → your console's application** and copy
+   the **Application Audience (AUD) tag**. Your team domain is under **Settings → Custom
+   pages** (`<team>.cloudflareaccess.com`).
+2. Enter both in **Settings → Cloudflare Zero Trust** (or set `CF_ACCESS_TEAM_DOMAIN` and
+   `CF_ACCESS_AUD`).
+3. Each administrator signs in with their password once and clicks **Link** under
+   **My account**. Administrators can also set a user's Access e-mail in **Users**.
+
+From then on, opening the console through Access signs them in. Every request carries
+Cloudflare's JWT (`Cf-Access-Jwt-Assertion`, or the `CF_Authorization` cookie), which is
+checked against the team's signing keys (RS256, fetched from
+`https://<team>.cloudflareaccess.com/cdn-cgi/access/certs` and refreshed when keys
+rotate), the issuer, the audience and its validity period. Service-token JWTs are
+refused. A session started this way stays valid only while each request still carries a
+valid token for the linked identity, so revoking someone in Cloudflare, unlinking them,
+or turning the integration off ends their console session too. Password sign-in keeps
+working, and signing out stops the automatic sign-in for that browser tab.
+
+RustDesk clients can't complete an Access login, so their API server address must bypass
+Access (a separate hostname or a Bypass policy, or the LAN address).
+
+**Client IPs.** Behind a tunnel, every request appears to come from cloudflared. Turn on
+**Client IP from CF-Connecting-IP** (`CF_CLIENT_IP=true`) to log the real address instead.
+Anyone who can reach the port directly could forge this header, so either keep the port
+private or list your cloudflared host(s) under **Trusted proxies** (`CF_TRUSTED_PROXIES`):
+the header is then ignored on requests from anywhere else.
 
 ## Command-line tools
 

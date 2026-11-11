@@ -45,7 +45,8 @@ export class Router {
   }
 }
 
-function clientIp(req, trustProxy) {
+function clientIp(req, trustProxy, forwardedIp) {
+  if (forwardedIp) return forwardedIp;
   let ip = req.socket.remoteAddress ?? '';
   if (trustProxy) {
     // Right-most entry is the address our (single, trusted) proxy saw.
@@ -58,7 +59,8 @@ function clientIp(req, trustProxy) {
 export class Context {
   #body;
 
-  constructor(req, res, config) {
+  /** `forwardedIp`: a client address already vouched for (Cloudflare's CF-Connecting-IP). */
+  constructor(req, res, config, { forwardedIp = null } = {}) {
     this.req = req;
     this.res = res;
     this.config = config;
@@ -68,7 +70,7 @@ export class Context {
     this.method = req.method ?? 'GET';
     this.params = {};
     this.user = null;
-    this.ip = clientIp(req, config.trustProxy);
+    this.ip = clientIp(req, config.trustProxy, forwardedIp);
   }
 
   header(name) {

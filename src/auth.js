@@ -114,13 +114,13 @@ export class Auth {
     return (await verifyPassword(String(password), user.password_hash)) ? user : null;
   }
 
-  createToken(userId, kind, { deviceId = '', deviceUuid = '', deviceInfo = '', ip = '', userAgent = '' } = {}) {
+  createToken(userId, kind, { deviceId = '', deviceUuid = '', deviceInfo = '', ip = '', userAgent = '', method = 'password' } = {}) {
     const token = newToken();
     const now = Date.now();
     this.store.run(
-      `INSERT INTO tokens (token_hash, user_id, kind, device_id, device_uuid, device_info, ip, user_agent, created_at, last_used_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      hashToken(token), userId, kind, deviceId, deviceUuid, deviceInfo, ip, userAgent.slice(0, 300), now, now, now + this.ttl(kind),
+      `INSERT INTO tokens (token_hash, user_id, kind, device_id, device_uuid, device_info, ip, user_agent, created_at, last_used_at, expires_at, auth_method)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      hashToken(token), userId, kind, deviceId, deviceUuid, deviceInfo, ip, userAgent.slice(0, 300), now, now, now + this.ttl(kind), method,
     );
     return token;
   }
@@ -130,7 +130,7 @@ export class Auth {
     if (!token) return null;
     const now = Date.now();
     const row = this.store.get(
-      `SELECT t.id AS token_id, t.last_used_at AS token_last_used_at, u.*
+      `SELECT t.id AS token_id, t.last_used_at AS token_last_used_at, t.auth_method AS token_auth_method, u.*
        FROM tokens t JOIN users u ON u.id = t.user_id
        WHERE t.token_hash = ? AND t.kind = ? AND t.expires_at > ?`,
       hashToken(token), kind, now,

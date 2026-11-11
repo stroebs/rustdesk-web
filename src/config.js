@@ -33,6 +33,15 @@ export function loadConfig(env = process.env, overrides = {}) {
     // "auto" marks the cookie Secure when the request arrived over HTTPS.
     cookieSecure: (env.COOKIE_SECURE || 'auto').toLowerCase(),
 
+    // Cloudflare Zero Trust (Access). Each can be overridden in Settings.
+    cfEnabled: env.CF_ACCESS_ENABLED ?? '',
+    cfTeamDomain: env.CF_ACCESS_TEAM_DOMAIN || '',
+    cfAudience: env.CF_ACCESS_AUD || '',
+    cfAutoLogin: env.CF_ACCESS_AUTO_LOGIN ?? '',
+    // Take client addresses from CF-Connecting-IP (only from CF_TRUSTED_PROXIES, if set).
+    cfClientIp: env.CF_CLIENT_IP ?? '',
+    cfTrustedProxies: env.CF_TRUSTED_PROXIES || '',
+
     // Optional integration with a local hbbs instance.
     hbbsDbPath: env.HBBS_DB_PATH || '',
     hbbsKeyFile: env.HBBS_KEY_FILE || '',

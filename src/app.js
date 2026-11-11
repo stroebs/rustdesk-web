@@ -4,6 +4,7 @@ import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
 import { Auth, hashPassword, randomPassword } from './auth.js';
+import { CloudflareAccess } from './cfaccess.js';
 import { Hbbs } from './hbbs.js';
 import { Context, Router, SECURITY_HEADERS, serveStatic } from './http.js';
 import { registerAdminRoutes } from './routes/admin.js';
@@ -43,6 +44,22 @@ export function createApp(config, { logger = console } = {}) {
     buildId: null,
     auth: new Auth(store, config),
     hbbs: new Hbbs(store, config),
+    cloudflare: new CloudflareAccess(store, config, { logger }),
+    /**
+     * The user behind a console session token. A session that was opened with
+     * Cloudflare Access only stays valid while each request still carries a valid
+     * Access token for the linked identity, so revoking access in Cloudflare (or
+     * unlinking) ends it.
+     */
+    async webUser(token, headers) {
+      const user = app.auth.lookup(token, 'web');
+      if (!user) return null;
+      if (user.token_auth_method === 'cloudflare') {
+        const { identity } = await app.cloudflare.identify(headers);
+        if (!identity || !user.cf_email || identity.email !== user.cf_email.toLowerCase()) return null;
+      }
+      return user;
+    },
     log(ctx, action, target = '', detail = '') {
       store.run(
         'INSERT INTO activity (created_at, user_id, username, action, target, detail, ip) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -63,7 +80,7 @@ export function createApp(config, { logger = console } = {}) {
   registerAdminRoutes(router, app);
 
   async function handle(req, res) {
-    const ctx = new Context(req, res, config);
+    const ctx = new Context(req, res, config, { forwardedIp: app.cloudflare.connectingIp(req) });
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
     try {
       if (ctx.path === '/api' || ctx.path.startsWith('/api/')) {

@@ -191,6 +191,8 @@ input[type="color"] { width: 42px; height: 34px; padding: 2px; border: 1px solid
 .login .brand { color: var(--text); padding: 0 0 18px; }
 .login .brand small { color: var(--muted); }
 .login h1 { font-size: 20px; margin-bottom: 4px; }
+.login-alt { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); gap: 8px; }
+.login-alt .btn { justify-content: center; overflow-wrap: anywhere; }
 
 /* ---------- Dialog ---------- */
 dialog.modal { border: 1px solid var(--border); border-radius: var(--radius); padding: 0; width: min(520px, calc(100vw - 32px)); background: var(--surface); color: var(--text); box-shadow: var(--shadow-lg); }

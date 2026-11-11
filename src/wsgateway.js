@@ -56,11 +56,18 @@ function sameOrigin(req) {
 }
 
 export function attachWsGateway(server, app) {
-  const { auth, logger } = app;
+  const { logger } = app;
   const active = new Set();
 
   server.on('upgrade', (req, socket, head) => {
     socket.on('error', () => socket.destroy());
+    upgrade(req, socket, head).catch((err) => {
+      logger.error(`ws gateway: ${err.message}`);
+      reject(socket, 500, 'Internal Server Error');
+    });
+  });
+
+  async function upgrade(req, socket, head) {
     const path = new URL(req.url ?? '/', 'http://localhost').pathname;
     const kind = path === '/ws/id' ? 'id' : path === '/ws/relay' ? 'relay' : null;
     if (!kind) return reject(socket, 404, 'Not Found');
@@ -72,7 +79,13 @@ export function attachWsGateway(server, app) {
       .split(';')
       .map((p) => p.trim())
       .find((p) => p.startsWith(`${SESSION_COOKIE}=`));
-    const user = cookie ? auth.lookup(decodeURIComponent(cookie.slice(SESSION_COOKIE.length + 1)), 'web') : null;
+    let token = '';
+    try {
+      token = cookie ? decodeURIComponent(cookie.slice(SESSION_COOKIE.length + 1)) : '';
+    } catch {
+      /* malformed cookie */
+    }
+    const user = token ? await app.webUser(token, req.headers) : null;
     if (!user?.is_admin) return reject(socket, 401, 'Unauthorized');
 
     const target = gatewayTargets(app)[kind];
@@ -118,7 +131,7 @@ export function attachWsGateway(server, app) {
       if (piped) socket.destroy();
       else reject(socket, 502, 'Bad Gateway');
     });
-  });
+  }
 
   return {
     get size() {

@@ -1,4 +1,5 @@
 import { hashPassword, validatePassword } from '../auth.js';
+import { AccessError, normalizeTeamDomain, parseAudiences, parseProxyList } from '../cfaccess.js';
 import { effectiveServerConfig, encodeConfigString, installerName } from '../serverconfig.js';
 import { isActive, unrecordedSessions } from '../sessions.js';
 import { gatewayTargets } from '../wsgateway.js';
@@ -24,6 +25,8 @@ export function publicUser(u) {
     created_at: u.created_at,
     updated_at: u.updated_at,
     last_login_at: u.last_login_at,
+    cloudflare_email: u.cf_email ?? '',
+    cloudflare_linked_at: u.cf_linked_at ?? null,
   };
 }
 
@@ -90,7 +93,7 @@ export function registerAdminRoutes(r, app) {
 
   const admin = (handler) => async (ctx) => {
     csrf(ctx);
-    const user = auth.lookup(ctx.cookie(SESSION_COOKIE), 'web');
+    const user = await app.webUser(ctx.cookie(SESSION_COOKIE), ctx.req.headers);
     if (!user) throw new HttpError(401, 'Not signed in');
     if (!user.is_admin) throw new HttpError(403, 'Administrator access required');
     ctx.user = user;
@@ -135,6 +138,40 @@ export function registerAdminRoutes(r, app) {
     return { user: publicUser(user) };
   });
 
+  // What the sign-in page can offer. Public; reveals the Access identity only to
+  // the browser that presented its token.
+  r.get('/api/admin/login-options', async (ctx) => {
+    const cf = app.cloudflare.settings();
+    const { identity } = cf.ready ? await app.cloudflare.identify(ctx.req.headers) : {};
+    const linked = Boolean(identity && store.get("SELECT 1 FROM users WHERE cf_email = ? COLLATE NOCASE AND status = 1 AND is_admin = 1", identity.email));
+    return { cloudflare: { enabled: cf.ready, auto_login: cf.auto_login, email: identity?.email ?? null, linked } };
+  });
+
+  // Sign in with the Cloudflare Access identity on this request (linked in My account).
+  r.post('/api/admin/login/cloudflare', async (ctx) => {
+    csrf(ctx);
+    if (!app.cloudflare.settings().ready) throw new HttpError(404, 'Cloudflare Access sign-in is not enabled');
+    const { identity, error } = await app.cloudflare.identify(ctx.req.headers);
+    if (error) {
+      app.log(ctx, 'login_failed', '', `cloudflare: ${error}`);
+      throw new HttpError(401, `Cloudflare Access token rejected: ${error}`);
+    }
+    if (!identity) throw new HttpError(401, 'This request has no Cloudflare Access token. Open the console through its Access application.');
+    const user = store.get('SELECT * FROM users WHERE cf_email = ? COLLATE NOCASE', identity.email);
+    if (!user) {
+      app.log(ctx, 'login_failed', identity.email, 'cloudflare: not linked');
+      throw new HttpError(403, `No account is linked to ${identity.email}. Sign in with your password and link it under My account.`);
+    }
+    if (user.status !== 1) throw new HttpError(403, 'This account is disabled');
+    if (!user.is_admin) throw new HttpError(403, 'Administrator access required');
+    const token = auth.createToken(user.id, 'web', { ip: ctx.ip, userAgent: ctx.header('user-agent'), method: 'cloudflare' });
+    store.run('UPDATE users SET last_login_at = ? WHERE id = ?', Date.now(), user.id);
+    ctx.setCookie(SESSION_COOKIE, token);
+    ctx.user = user;
+    app.log(ctx, 'login', '', `cloudflare: ${identity.email}`);
+    return { user: publicUser(user) };
+  });
+
   r.post('/api/admin/logout', (ctx) => {
     csrf(ctx);
     auth.revoke(ctx.cookie(SESSION_COOKIE));
@@ -142,7 +179,57 @@ export function registerAdminRoutes(r, app) {
     return ctx.empty();
   });
 
-  r.get('/api/admin/me', admin((ctx) => ({ user: publicUser(ctx.user), version: app.version, source_url: config.sourceUrl })));
+  r.get('/api/admin/me', admin((ctx) => ({
+    user: publicUser(ctx.user),
+    auth_method: ctx.user.token_auth_method,
+    version: app.version,
+    source_url: config.sourceUrl,
+  })));
+
+  // --- Cloudflare Access identity of the signed-in user ---------------------
+  const cloudflareStatus = async (ctx, user) => {
+    const cf = app.cloudflare.settings();
+    const { identity, error } = cf.ready ? await app.cloudflare.identify(ctx.req.headers) : {};
+    return {
+      enabled: cf.ready,
+      auto_login: cf.auto_login,
+      linked_email: user.cf_email,
+      linked_at: user.cf_linked_at,
+      identity: identity ? { email: identity.email } : null,
+      error: error ?? null,
+    };
+  };
+
+  r.get('/api/admin/me/cloudflare', admin((ctx) => cloudflareStatus(ctx, ctx.user)));
+
+  // Link the Access identity on this request: proving it needs a valid token, so
+  // nobody can link an address they cannot sign in to Cloudflare with.
+  r.post('/api/admin/me/cloudflare', admin(async (ctx) => {
+    if (!app.cloudflare.settings().ready) throw new HttpError(400, 'Cloudflare Access sign-in is not enabled in Settings');
+    const { identity, error } = await app.cloudflare.identify(ctx.req.headers);
+    if (error) throw new HttpError(400, `Cloudflare Access token rejected: ${error}`);
+    if (!identity) throw new HttpError(400, 'This request has no Cloudflare Access token. Open the console through its Access application.');
+    const other = store.get('SELECT username FROM users WHERE cf_email = ? COLLATE NOCASE AND id <> ?', identity.email, ctx.user.id);
+    if (other) throw new HttpError(409, `${identity.email} is already linked to another account`);
+    store.tx(() => {
+      store.run('UPDATE users SET cf_email = ?, cf_linked_at = ?, updated_at = ? WHERE id = ?', identity.email, Date.now(), Date.now(), ctx.user.id);
+      store.run("DELETE FROM tokens WHERE user_id = ? AND auth_method = 'cloudflare' AND id <> ?", ctx.user.id, ctx.user.token_id);
+    });
+    app.log(ctx, 'cloudflare_link', ctx.user.username, identity.email);
+    return cloudflareStatus(ctx, userById(ctx.user.id));
+  }));
+
+  r.delete('/api/admin/me/cloudflare', admin(async (ctx) => {
+    if (ctx.user.token_auth_method === 'cloudflare') {
+      throw new HttpError(400, 'Sign in with your password to unlink Cloudflare Access (this session depends on it)');
+    }
+    store.tx(() => {
+      store.run('UPDATE users SET cf_email = \'\', cf_linked_at = NULL, updated_at = ? WHERE id = ?', Date.now(), ctx.user.id);
+      store.run("DELETE FROM tokens WHERE user_id = ? AND auth_method = 'cloudflare'", ctx.user.id);
+    });
+    app.log(ctx, 'cloudflare_unlink', ctx.user.username, ctx.user.cf_email);
+    return cloudflareStatus(ctx, userById(ctx.user.id));
+  }));
 
   r.post('/api/admin/me/password', admin(async (ctx) => {
     const b = await ctx.body();
@@ -187,7 +274,7 @@ export function registerAdminRoutes(r, app) {
   // --- Users --------------------------------------------------------------
   r.get('/api/admin/users', admin((ctx) => {
     const p = paging(ctx.query, { maxSize: 500 });
-    const w = where(searchClause(ctx.query.get('q')?.trim(), ['username', 'email', 'display_name', 'note']));
+    const w = where(searchClause(ctx.query.get('q')?.trim(), ['username', 'email', 'display_name', 'note', 'cf_email']));
     const total = store.get(`SELECT COUNT(*) AS n FROM users ${w.sql}`, ...w.args).n;
     const rows = store.all(
       `SELECT u.*,
@@ -211,6 +298,10 @@ export function registerAdminRoutes(r, app) {
       out.email = str(b.email, 254).trim();
       if (out.email && !EMAIL_RE.test(out.email)) throw new HttpError(400, 'Email address is not valid');
     }
+    if (b.cloudflare_email !== undefined) {
+      out.cf_email = str(b.cloudflare_email, 254).trim().toLowerCase();
+      if (out.cf_email && !EMAIL_RE.test(out.cf_email)) throw new HttpError(400, 'Cloudflare Access email is not valid');
+    }
     if (b.display_name !== undefined) out.display_name = str(b.display_name, 100).trim();
     if (b.note !== undefined) out.note = str(b.note, 1000);
     if (b.is_admin !== undefined) out.is_admin = b.is_admin ? 1 : 0;
@@ -223,17 +314,24 @@ export function registerAdminRoutes(r, app) {
     return out;
   };
 
+  const checkCloudflareEmail = (email, userId) => {
+    if (email && store.get('SELECT 1 FROM users WHERE cf_email = ? COLLATE NOCASE AND id <> ?', email, userId)) {
+      throw new HttpError(409, `${email} is already linked to another account`);
+    }
+  };
+
   r.post('/api/admin/users', admin(async (ctx) => {
     const f = readUserFields(await ctx.body(), { creating: true });
     if (store.get('SELECT 1 FROM users WHERE username = ?', f.username)) {
       throw new HttpError(409, 'A user with that username already exists');
     }
+    checkCloudflareEmail(f.cf_email, -1);
     const now = Date.now();
     const hash = await hashPassword(f.password);
     const { lastInsertRowid } = store.run(
-      `INSERT INTO users (username, email, display_name, note, password_hash, is_admin, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      f.username, f.email ?? '', f.display_name ?? '', f.note ?? '', hash, f.is_admin ?? 0, f.status ?? 1, now, now,
+      `INSERT INTO users (username, email, display_name, note, password_hash, is_admin, status, created_at, updated_at, cf_email, cf_linked_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      f.username, f.email ?? '', f.display_name ?? '', f.note ?? '', hash, f.is_admin ?? 0, f.status ?? 1, now, now, f.cf_email ?? '', f.cf_email ? now : null,
     );
     app.log(ctx, 'user_create', f.username, f.is_admin ? 'admin' : '');
     return { user: publicUser(userById(lastInsertRowid)) };
@@ -254,6 +352,11 @@ export function registerAdminRoutes(r, app) {
         store.get('SELECT 1 FROM users WHERE username = ? AND id <> ?', f.username, user.id)) {
       throw new HttpError(409, 'A user with that username already exists');
     }
+    checkCloudflareEmail(f.cf_email, user.id);
+    const cfChanged = f.cf_email !== undefined && f.cf_email !== user.cf_email.toLowerCase();
+    if (cfChanged && isSelf && ctx.user.token_auth_method === 'cloudflare') {
+      throw new HttpError(400, 'Sign in with your password to change your own Cloudflare Access link (this session depends on it)');
+    }
 
     const hash = f.password ? await hashPassword(f.password) : null;
     const sets = [];
@@ -268,14 +371,20 @@ export function registerAdminRoutes(r, app) {
       sets.push('password_hash = ?');
       args.push(hash);
     }
+    if (cfChanged) {
+      sets.push('cf_email = ?', 'cf_linked_at = ?');
+      args.push(f.cf_email, f.cf_email ? Date.now() : null);
+    }
     store.tx(() => {
       if (sets.length) store.run(`UPDATE users SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...args, Date.now(), user.id);
       // Changing the password or disabling the account signs the user out everywhere
       // (except the admin's own current browser session).
       if (hash || f.status === 0) store.run('DELETE FROM tokens WHERE user_id = ? AND id <> ?', user.id, isSelf ? ctx.user.token_id : -1);
       if (f.is_admin === 0) store.run("DELETE FROM tokens WHERE user_id = ? AND kind = 'web'", user.id);
+      if (cfChanged) store.run("DELETE FROM tokens WHERE user_id = ? AND auth_method = 'cloudflare'", user.id);
     });
-    const changed = Object.keys(f).filter((k) => k !== 'password').concat(hash ? ['password'] : []);
+    const changed = Object.keys(f).filter((k) => k !== 'password' && (k !== 'cf_email' || cfChanged))
+      .map((k) => (k === 'cf_email' ? 'cloudflare_email' : k)).concat(hash ? ['password'] : []);
     app.log(ctx, 'user_update', user.username, changed.join(', '));
     return { user: publicUser(userById(user.id)) };
   }));
@@ -549,6 +658,26 @@ export function registerAdminRoutes(r, app) {
   }));
 
   // --- Settings -----------------------------------------------------------
+  const CF_KEYS = ['cf_enabled', 'cf_team_domain', 'cf_audience', 'cf_auto_login', 'cf_client_ip', 'cf_trusted_proxies'];
+  const cloudflareSettings = () => {
+    const cf = app.cloudflare.settings();
+    return {
+      enabled: cf.enabled,
+      ready: cf.ready,
+      team_domain: cf.team_domain,
+      issuer: cf.issuer,
+      certs_url: cf.certs_url,
+      audiences: cf.audiences,
+      auto_login: cf.auto_login,
+      client_ip: cf.client_ip,
+      trusted_proxies: cf.trusted_proxies,
+      problems: cf.problems,
+      sources: cf.sources,
+      saved: Object.fromEntries(CF_KEYS.map((k) => [k.slice(3), store.getSetting(k)])),
+      linked_users: store.get("SELECT COUNT(*) AS n FROM users WHERE cf_email <> ''").n,
+    };
+  };
+
   const settingsPayload = () => {
     const cfg = effectiveServerConfig(app);
     return {
@@ -570,6 +699,7 @@ export function registerAdminRoutes(r, app) {
         hbbs_key_file: Boolean(config.hbbsKeyFile),
         trust_proxy: config.trustProxy,
       },
+      cloudflare: cloudflareSettings(),
       hbbs: app.hbbs.status,
       version: app.version,
     };
@@ -580,6 +710,33 @@ export function registerAdminRoutes(r, app) {
   r.put('/api/admin/settings', admin(async (ctx) => {
     const b = await ctx.body();
     const changed = [];
+    // Cloudflare: "" (or null) clears a saved value, falling back to the environment.
+    const cf = b.cloudflare && typeof b.cloudflare === 'object' ? b.cloudflare : {};
+    const cfValues = {};
+    for (const name of ['enabled', 'auto_login', 'client_ip']) {
+      const v = cf[name];
+      if (v === undefined) continue;
+      cfValues[name] = v === null || v === '' ? '' : v === true || v === '1' || v === 1 ? '1' : v === false || v === '0' || v === 0 ? '0' : null;
+      if (cfValues[name] === null) throw new HttpError(400, `cloudflare.${name} must be true, false or empty`);
+    }
+    try {
+      if (cf.team_domain !== undefined) cfValues.team_domain = normalizeTeamDomain(str(cf.team_domain ?? '', 300));
+      if (cf.audience !== undefined) cfValues.audience = parseAudiences(str(cf.audience ?? '', 2000)).join(',');
+      if (cf.trusted_proxies !== undefined) {
+        const list = str(cf.trusted_proxies ?? '', 4000).split(/[\s,]+/).filter(Boolean).join(', ');
+        parseProxyList(list);
+        cfValues.trusted_proxies = list;
+      }
+    } catch (err) {
+      if (err instanceof AccessError) throw new HttpError(400, err.message);
+      throw err;
+    }
+    for (const [name, value] of Object.entries(cfValues)) {
+      store.setSetting(`cf_${name}`, value);
+      changed.push(`cloudflare.${name}`);
+    }
+    app.cloudflare.invalidate();
+
     for (const key of ['id_server', 'relay_server', 'api_server', 'key']) {
       if (b[key] === undefined) continue;
       const value = str(b[key], 500).trim();

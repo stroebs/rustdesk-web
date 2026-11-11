@@ -35,7 +35,7 @@ onUnauthorized(() => {
   if (!session) return;
   session = null;
   toast('Your session has ended. Please sign in again.', 'error');
-  route();
+  api.get('/login-options').then((o) => { loginOptions = o; }, () => {}).finally(route);
 });
 
 function parseHash() {
@@ -94,13 +94,36 @@ function renderShell(active) {
   return main;
 }
 
+// After signing out, don't sign straight back in with Cloudflare Access in this tab.
+const NO_AUTO_LOGIN = 'rdw-no-auto-login';
+function autoLoginAllowed(allowed) {
+  try {
+    if (allowed === undefined) return sessionStorage.getItem(NO_AUTO_LOGIN) !== '1';
+    if (allowed) sessionStorage.removeItem(NO_AUTO_LOGIN);
+    else sessionStorage.setItem(NO_AUTO_LOGIN, '1');
+  } catch {
+    /* storage unavailable */
+  }
+  return true;
+}
+
+let loginOptions = { cloudflare: { enabled: false } };
+
+async function cloudflareLogin() {
+  await api.post('/login/cloudflare');
+  autoLoginAllowed(true);
+  session = await api.get('/me');
+}
+
 async function logout(e) {
   e.preventDefault();
+  autoLoginAllowed(false);
   try {
     await api.post('/logout');
   } finally {
     session = null;
     location.hash = '#/';
+    loginOptions = await api.get('/login-options').catch(() => loginOptions);
     route();
   }
 }
@@ -121,6 +144,7 @@ function renderLogin() {
     error.classList.add('hidden');
     try {
       await api.post('/login', { username: form.elements.username.value.trim(), password: form.elements.password.value });
+      autoLoginAllowed(true);
       session = await api.get('/me');
       route();
     } catch (err) {
@@ -131,11 +155,34 @@ function renderLogin() {
       submit.disabled = false;
     }
   });
+  const cf = loginOptions.cloudflare;
+  let cfBlock = null;
+  if (cf.enabled && cf.email && !cf.linked) {
+    cfBlock = h('div', { class: 'stack login-alt' }, h('span', { class: 'muted small' },
+      `You are signed in to Cloudflare Access as ${cf.email}. Sign in with your password, then link it under My account to skip this page next time.`));
+  } else if (cf.enabled && cf.email) {
+    const cfButton = h('button', { type: 'button', class: 'btn' }, icon('cloud'), `Continue as ${cf.email}`);
+    cfButton.addEventListener('click', async () => {
+      cfButton.disabled = true;
+      error.classList.add('hidden');
+      try {
+        await cloudflareLogin();
+        route();
+      } catch (err) {
+        error.textContent = err.message;
+        error.classList.remove('hidden');
+      } finally {
+        cfButton.disabled = false;
+      }
+    });
+    cfBlock = h('div', { class: 'stack login-alt' }, cfButton, h('span', { class: 'muted small' }, 'Uses your Cloudflare Access sign-in.'));
+  }
   clear(app).append(h('div', { class: 'login' }, h('div', { class: 'card' },
     brand(),
     h('h1', null, 'Sign in'),
     h('p', { class: 'muted' }, 'Use an administrator account.'),
     form,
+    cfBlock,
   )));
   form.elements.username.focus();
 }
@@ -170,6 +217,12 @@ window.addEventListener('unhandledrejection', (e) => {
     if (err.status !== 401 && err.status !== 403) {
       clear(app).append(h('div', { class: 'login' }, errorBox(err)));
       return;
+    }
+    loginOptions = await api.get('/login-options').catch(() => loginOptions);
+    const cf = loginOptions.cloudflare;
+    if (cf.enabled && cf.auto_login && cf.linked && autoLoginAllowed()) {
+      // Rejected after all: fall through to the sign-in page.
+      await cloudflareLogin().catch(() => { session = null; });
     }
   }
   route();

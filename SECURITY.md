@@ -15,6 +15,15 @@ You should get an acknowledgement within a few days.
   `X-Requested-With` header on state-changing requests, and sends a strict
   Content-Security-Policy. The UI never renders server data as HTML.
 - Failed sign-ins are rate-limited per IP and per IP and username.
+- **Cloudflare Access sign-in** (optional) trusts only JWTs signed with RS256 by the
+  configured team's published keys, with the exact issuer, a configured audience, a
+  valid `exp`/`nbf`/`iat` (60 s skew) and a user e-mail. The algorithm is never taken
+  from the token. Identities are linked to accounts by proving them (a valid token on
+  the linking request) or by an administrator. Sessions opened this way require a
+  matching valid token on every request.
+- `CF-Connecting-IP` and `X-Forwarded-For` can be forged by anyone who reaches the
+  port directly. They are only used when enabled; restrict `CF-Connecting-IP` to your
+  cloudflared host(s) with `CF_TRUSTED_PROXIES`, or keep the port private.
 - **Unauthenticated endpoints.** `/api/heartbeat`, `/api/sysinfo` and `/api/audit/*`
   are called by RustDesk clients without credentials, which is how the protocol
   works. Anyone who can reach the API can submit device telemetry and audit
