@@ -5,8 +5,8 @@ Thanks for helping out! A few ground rules keep this project easy to run and rev
 ## Principles
 
 - **No runtime dependencies.** The server uses only Node.js built-ins
-  (`node:http`, `node:sqlite`, `node:crypto`). If you need a dependency, open an
-  issue first to discuss it.
+  (`node:http`, `node:sqlite`, `node:crypto`). The only third-party code is the
+  vendored tweetnacl-js. If you need a dependency, open an issue first.
 - **No build step.** The UI is plain ES modules served as-is from `public/`.
 - **Never use `innerHTML`.** Build DOM with the `h()` helper from
   `public/assets/lib/dom.js` so server data is always treated as text. The CSP
@@ -36,11 +36,25 @@ src/
   auth.js            password hashing, tokens, rate limiting
   hbbs.js            optional read-only import from hbbs's database
   cli.js             reset-password / create-admin / list-users
+  wsgateway.js       /ws/id and /ws/relay proxy for browser sessions
 public/
   index.html, assets/app.js, assets/app.css
   assets/pages/*.js  one module per console page
-test/                node:test suites
+  assets/client/     browser RustDesk client: session (protocol), protobuf runtime,
+                     generated schema, crypto helpers, video decoding, input mapping
+  assets/vendor/     tweetnacl-js (unmodified, see the file header)
+proto/               RustDesk protocol definitions (AGPL-3.0, see proto/README.md)
+tools/gen-proto.mjs  generates assets/client/schema.js from proto/
+testbed/             Docker environment with a real RustDesk peer
+test/                node:test suites; test/e2e/ runs against testbed/
 ```
+
+### Browser client
+
+The client in `public/assets/client/` implements RustDesk's protocol for the relay-only
+path a browser can use. When changing it, run `npm run e2e`: it connects to a real RustDesk
+peer through hbbs/hbbr and checks login and video. Keep the code runnable in Node.js (no
+DOM in `session.js`, `protobuf.js` or the crypto modules) so it stays testable.
 
 ## Pull requests
 

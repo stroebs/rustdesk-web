@@ -1,0 +1,52 @@
+# End-to-end testbed for the browser client: hbbs, hbbr, a headless RustDesk
+# peer, and rustdesk-web built from this checkout.
+#
+#   docker compose -f testbed/compose.yml up -d --build
+#   open http://localhost:21180  (admin / testbed-admin), connect to 123456789 / testbed-password
+#
+# Everything runs on a private network; only the console is published.
+name: rustdesk-web-testbed
+
+services:
+  hbbs:
+    image: rustdesk/rustdesk-server:latest
+    command: hbbs
+    volumes:
+      - keys:/root
+    ports:
+      - "127.0.0.1:21181:21118"   # WebSocket, for protocol tests that bypass the console
+
+  hbbr:
+    image: rustdesk/rustdesk-server:latest
+    command: hbbr
+    volumes:
+      - keys:/root
+    ports:
+      - "127.0.0.1:21182:21119"
+
+  peer:
+    build: ./peer
+    environment:
+      PEER_ID: "123456789"
+      PEER_PASSWORD: testbed-password
+    volumes:
+      - keys:/keys:ro
+    depends_on: [hbbs, hbbr]
+
+  rustdesk-web:
+    build: ..
+    environment:
+      ADMIN_PASSWORD: testbed-admin
+      HBBS_DB_PATH: /hbbs/db_v2.sqlite3
+      HBBS_KEY_FILE: /hbbs/id_ed25519.pub
+      ID_SERVER: hbbs
+      HBBS_WS_URL: ws://hbbs:21118
+      HBBR_WS_URL: ws://hbbr:21119
+    volumes:
+      - keys:/hbbs:ro
+    ports:
+      - "127.0.0.1:21180:21114"
+    depends_on: [hbbs, hbbr]
+
+volumes:
+  keys:
