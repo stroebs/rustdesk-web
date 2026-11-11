@@ -226,3 +226,25 @@ dialog.modal::backdrop { background: rgb(10 14 22 / 55%); }
 h3.small { margin-bottom: 8px; letter-spacing: 0.05em; }
 .tag-form { flex-wrap: nowrap; }
 .tag-form input[name="tag"] { max-width: 280px; }
+
+/* ---------- Remote session ---------- */
+.source-link { display: block; padding: 0 10px 8px; font-size: 11px; color: #7b8496; }
+.source-link:hover { color: var(--sidebar-active); }
+.main-full { height: 100vh; }
+.remote-shell { display: flex; flex-direction: column; height: 100vh; background: #0b0e14; color: #e6e9ef; }
+.remote-bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; background: #141a26; border-bottom: 1px solid #252d3d; min-height: 44px; flex-wrap: wrap; }
+.remote-bar .icon-btn { color: #c4cad6; }
+.remote-bar .muted { color: #97a0b1; font-size: 12px; }
+.remote-bar .btn { background: #1f2738; border-color: #2a3140; color: #e6e9ef; }
+.remote-bar .btn:hover { background: #283146; }
+.remote-bar .btn.danger { color: #f0717a; }
+.remote-center { flex: 1; min-height: 0; display: grid; place-items: center; overflow: auto; padding: 16px; }
+.remote-card { width: min(420px, 100%); color: var(--text); }
+.remote-wait { display: flex; flex-direction: column; align-items: center; gap: 14px; color: #97a0b1; }
+.spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid #2a3140; border-top-color: #6d8ff0; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.remote-center:has(.remote-screen) { padding: 0; }
+.remote-screen { width: 100%; height: 100%; display: grid; place-items: center; overflow: auto; }
+.remote-canvas { display: block; outline: none; cursor: default; background: #000; touch-action: none; }
+.remote-screen.fit .remote-canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
+.remote-canvas:focus-visible { box-shadow: 0 0 0 2px #6d8ff0; }

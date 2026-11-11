@@ -23,6 +23,7 @@ const PATHS = {
   tag: ['M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z', 'M7 7h.01'],
   lock: ['M5 11h14v10H5z', 'M7 11V7a5 5 0 0 1 10 0v4'],
   server: ['M2 2h20v8H2z', 'M2 14h20v8H2z', 'M6 6h.01', 'M6 18h.01'],
+  remote: ['M3 4h18v12H3z', 'M8 20h8', 'M12 16v4', 'M9 9l3-3 3 3', 'M12 6v7'],
 };
 
 const NS = 'http://www.w3.org/2000/svg';
