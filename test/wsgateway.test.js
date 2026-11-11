@@ -87,6 +87,24 @@ describe('WebSocket gateway', () => {
     }
   });
 
+  it('tells hbbs/hbbr the browser\'s address (X-Real-IP), never one the browser supplies', async () => {
+    const realIp = async (headers = {}) => {
+      const { status, socket } = await upgrade(t.base, '/ws/id', { Cookie: cookie, Origin: origin, ...headers });
+      assert.equal(status, 101);
+      socket.destroy();
+      return hbbs.seen.at(-1).headers['x-real-ip'];
+    };
+    assert.equal(await realIp({ 'X-Real-IP': '6.6.6.6', 'X-Forwarded-For': '6.6.6.6' }), '127.0.0.1');
+    t.app.store.setSetting('cf_client_ip', '1');
+    t.app.cloudflare.invalidate();
+    try {
+      assert.equal(await realIp({ 'CF-Connecting-IP': '203.0.113.9' }), '203.0.113.9');
+    } finally {
+      t.app.store.setSetting('cf_client_ip', '');
+      t.app.cloudflare.invalidate();
+    }
+  });
+
   it('requires an admin session', async () => {
     assert.equal((await upgrade(t.base, '/ws/id', { Origin: origin })).status, 401);
     assert.equal((await upgrade(t.base, '/ws/id', { Origin: origin, Cookie: 'rdw_session=bogus' })).status, 401);
