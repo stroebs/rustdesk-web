@@ -5,6 +5,7 @@
  * The shared address-book endpoints (/api/ab/settings, /api/ab/personal, ...)
  * intentionally return 404 so clients fall back to it.
  */
+import { parseAlive, reconcileHeartbeat } from '../sessions.js';
 import { HttpError, cleanId, cleanIp, intOrNull, paging, str } from '../util.js';
 
 export const EMPTY_ADDRESS_BOOK = JSON.stringify({ tags: [], peers: [], tag_colors: '{}' });
@@ -161,14 +162,18 @@ export function registerClientRoutes(r, app) {
     const id = cleanId(b.id);
     if (!id) throw new HttpError(400, 'Missing id');
     const now = Date.now();
-    const conns = Array.isArray(b.conns) ? b.conns.length : 0;
-    store.run(
-      `INSERT INTO devices (id, uuid, ip, active_conns, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at, ip = excluded.ip,
-         active_conns = excluded.active_conns,
-         uuid = CASE WHEN excluded.uuid <> '' THEN excluded.uuid ELSE devices.uuid END`,
-      id, str(b.uuid, 200), ctx.ip, conns, now, now,
-    );
+    // Clients omit `conns` entirely when nothing is open.
+    const alive = parseAlive(b.conns ?? []);
+    store.tx(() => {
+      store.run(
+        `INSERT INTO devices (id, uuid, ip, active_conns, alive_conns, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at, ip = excluded.ip,
+           active_conns = excluded.active_conns, alive_conns = excluded.alive_conns,
+           uuid = CASE WHEN excluded.uuid <> '' THEN excluded.uuid ELSE devices.uuid END`,
+        id, str(b.uuid, 200), ctx.ip, alive.length, JSON.stringify(alive), now, now,
+      );
+      reconcileHeartbeat(store, id, alive, now);
+    });
     const device = store.get('SELECT sysinfo_at FROM devices WHERE id = ?', id);
     // Ask the client to (re-)upload its system information when we have none.
     return device?.sysinfo_at ? {} : { sysinfo: true };
@@ -205,6 +210,13 @@ export function registerClientRoutes(r, app) {
     const openRow = `SELECT id FROM conn_logs WHERE device_id = ? AND conn_id IS ? AND ended_at IS NULL ORDER BY id DESC LIMIT 1`;
 
     if (b.action === 'new') {
+      // Connection IDs restart from 1 when the RustDesk service restarts; an older
+      // row still open under the same ID can no longer be the live connection.
+      store.run(
+        `UPDATE conn_logs SET ended_at = COALESCE(last_alive_at, started_at), end_inferred = 1
+         WHERE device_id = ? AND conn_id IS ? AND ended_at IS NULL`,
+        deviceId, connId,
+      );
       store.run(
         'INSERT INTO conn_logs (device_id, conn_id, session_id, ip, started_at) VALUES (?, ?, ?, ?, ?)',
         deviceId, connId, str(b.session_id, 64), cleanIp(b.ip), now,

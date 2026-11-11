@@ -1,5 +1,6 @@
 import { hashPassword, validatePassword } from '../auth.js';
 import { effectiveServerConfig, encodeConfigString, installerName } from '../serverconfig.js';
+import { isActive, unrecordedSessions } from '../sessions.js';
 import { HttpError, cleanId, likePattern, paging, parseJson, str } from '../util.js';
 import { EMPTY_ADDRESS_BOOK } from './client.js';
 
@@ -70,6 +71,15 @@ function redactPeer(peer) {
 export function registerAdminRoutes(r, app) {
   const { store, auth, config } = app;
   const onlineSince = () => Date.now() - config.onlineThresholdSeconds * 1000;
+
+  // Log rows are selected with the device's d.last_seen_at AS device_last_seen and
+  // d.alive_conns AS device_alive.
+  const connRow = (since) => ({ device_last_seen, device_alive, ...c }) => ({
+    ...c,
+    end_inferred: Boolean(c.end_inferred),
+    active: isActive(c, device_last_seen, device_alive, since),
+    device_online: device_last_seen >= since,
+  });
 
   const csrf = (ctx) => {
     if (ctx.method !== 'GET' && ctx.method !== 'HEAD' && ctx.header(CSRF_HEADER) !== CSRF_VALUE) {
@@ -163,9 +173,11 @@ export function registerAdminRoutes(r, app) {
       connections_24h: store.get('SELECT COUNT(*) AS n FROM conn_logs WHERE started_at >= ?', day).n,
       files_24h: store.get('SELECT COUNT(*) AS n FROM file_logs WHERE created_at >= ?', day).n,
       recent_connections: store.all(
-        `SELECT c.*, d.hostname, d.last_seen_at AS device_last_seen FROM conn_logs c LEFT JOIN devices d ON d.id = c.device_id
+        `SELECT c.*, d.hostname, d.last_seen_at AS device_last_seen, d.alive_conns AS device_alive
+         FROM conn_logs c LEFT JOIN devices d ON d.id = c.device_id
          ORDER BY c.started_at DESC LIMIT 8`,
-      ).map(({ device_last_seen, ...c }) => ({ ...c, device_online: device_last_seen >= since })),
+      ).map(connRow(since)),
+      unrecorded_sessions: unrecordedSessions(store, since),
       hbbs: app.hbbs.status,
       server_configured: Boolean(cfg.id_server && cfg.key),
     };
@@ -360,7 +372,12 @@ export function registerAdminRoutes(r, app) {
     delete sysinfo.uuid;
     return {
       device: { ...deviceRow(d, onlineSince()), uuid: d.uuid, sysinfo },
-      connections: store.all('SELECT * FROM conn_logs WHERE device_id = ? ORDER BY started_at DESC LIMIT 10', d.id),
+      connections: store.all(
+        `SELECT c.*, d.last_seen_at AS device_last_seen, d.alive_conns AS device_alive
+         FROM conn_logs c JOIN devices d ON d.id = c.device_id
+         WHERE c.device_id = ? ORDER BY c.started_at DESC LIMIT 10`,
+        d.id,
+      ).map(connRow(onlineSince())),
     };
   }));
 
@@ -478,11 +495,12 @@ export function registerAdminRoutes(r, app) {
     const from = 'FROM conn_logs c LEFT JOIN devices d ON d.id = c.device_id';
     const total = store.get(`SELECT COUNT(*) AS n ${from} ${w.sql}`, ...w.args).n;
     const rows = store.all(
-      `SELECT c.*, d.hostname, d.last_seen_at AS device_last_seen ${from} ${w.sql}
+      `SELECT c.*, d.hostname, d.last_seen_at AS device_last_seen, d.alive_conns AS device_alive ${from} ${w.sql}
        ORDER BY c.started_at DESC LIMIT ? OFFSET ?`,
       ...w.args, p.pageSize, p.offset,
     );
-    return page(rows.map(({ device_last_seen, ...c }) => ({ ...c, device_online: device_last_seen >= since })), total, p);
+    const unrecorded = unrecordedSessions(store, since).filter((u) => !device || u.device_id === device);
+    return { ...page(rows.map(connRow(since)), total, p), unrecorded_sessions: unrecorded };
   }));
 
   r.get('/api/admin/audit/files', admin((ctx) => {

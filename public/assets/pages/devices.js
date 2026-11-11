@@ -67,7 +67,7 @@ async function showDevice(id, users, reload) {
         : h('p', { class: 'muted' }, 'No system information reported yet.'),
       h('div', null,
         h('h3', { class: 'small muted' }, 'RECENT CONNECTIONS'),
-        h('div', { class: 'card' }, dataTable({ columns: connectionColumns.filter((c) => c.label !== 'Device'), rows: connections.map((c) => ({ ...c, device_online: d.online })), empty: 'No connections to this device yet.' })),
+        h('div', { class: 'card' }, dataTable({ columns: connectionColumns.filter((c) => c.label !== 'Device'), rows: connections, empty: 'No connections to this device yet.' })),
         connections.length ? h('p', null, h('a', { href: `#/connections?device=${enc(d.id)}`, onclick: () => m.close() }, 'All connections for this device')) : null,
       ),
     ),

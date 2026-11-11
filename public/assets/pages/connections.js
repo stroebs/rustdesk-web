@@ -1,6 +1,6 @@
 import { h } from '../lib/dom.js';
 import { listView, pageHeader } from '../lib/ui.js';
-import { connectionColumns } from './common.js';
+import { connectionColumns, unrecordedNotice } from './common.js';
 
 export default {
   title: 'Connections',
@@ -9,13 +9,15 @@ export default {
     root.append(pageHeader('Connections', device
       ? h('span', null, 'Sessions to ', h('span', { class: 'mono' }, device), ' · ', h('a', { href: '#/connections' }, 'show all'))
       : 'Incoming remote sessions reported by controlled devices.'));
+    const notice = h('div');
     const list = listView({
       endpoint: '/audit/connections',
       searchPlaceholder: 'Search device, peer, name, IP…',
       initial: { filters: { device } },
       empty: 'No connections recorded yet.',
       columns: connectionColumns,
+      onData: (data) => notice.replaceChildren(unrecordedNotice(data.unrecorded_sessions) ?? ''),
     });
-    root.append(list.el);
+    root.append(h('div', { class: 'stack' }, notice, list.el));
   },
 };

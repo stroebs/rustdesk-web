@@ -2,7 +2,7 @@ import { api } from '../lib/api.js';
 import { h } from '../lib/dom.js';
 import { icon } from '../lib/icons.js';
 import { dataTable, pageHeader, timeAgo } from '../lib/ui.js';
-import { connectionColumns } from './common.js';
+import { connectionColumns, unrecordedNotice } from './common.js';
 
 function stat(label, value, sub, href, iconName) {
   return h(href ? 'a' : 'div', { class: 'card stat', href },
@@ -18,6 +18,7 @@ export default {
     root.append(pageHeader('Dashboard', 'An overview of your RustDesk deployment.'));
     const s = await api.get('/stats');
     const body = h('div', { class: 'stack' });
+    const unrecordedTotal = s.unrecorded_sessions.reduce((n, u) => n + u.count, 0);
 
     if (!s.server_configured) {
       body.append(h('div', { class: 'callout warn' }, icon('alert'),
@@ -35,12 +36,13 @@ export default {
 
     body.append(h('div', { class: 'stats' },
       stat('Online now', s.online, `of ${s.devices} device${s.devices === 1 ? '' : 's'}`, '#/devices?status=online', 'monitor'),
-      stat('Active sessions', s.active_sessions, 'on online devices', '#/connections', 'link'),
+      stat('Active sessions', s.active_sessions, unrecordedTotal ? `${unrecordedTotal} not in the log` : 'on online devices', '#/connections', 'link'),
       stat('Connections', s.connections_24h, 'in the last 24 hours', '#/connections', 'activity'),
       stat('File transfers', s.files_24h, 'in the last 24 hours', '#/files', 'file'),
       stat('Users', s.users, `${s.admins} administrator${s.admins === 1 ? '' : 's'}`, '#/users', 'users'),
     ));
 
+    body.append(unrecordedNotice(s.unrecorded_sessions) ?? '');
     body.append(h('div', { class: 'card' },
       h('div', { class: 'card-header' }, h('h2', null, 'Recent connections'), h('span', { class: 'spacer' }), h('a', { href: '#/connections' }, 'View all')),
       dataTable({

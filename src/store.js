@@ -110,6 +110,14 @@ const MIGRATIONS = [
     value TEXT NOT NULL
   );
   `,
+  // v2: track which connection IDs each heartbeat reports as open, so the log can
+  // be reconciled with reality (dropped "close" audits, sessions never logged).
+  `
+  ALTER TABLE devices ADD COLUMN alive_conns TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE conn_logs ADD COLUMN last_alive_at INTEGER;
+  ALTER TABLE conn_logs ADD COLUMN end_inferred INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX conn_logs_open ON conn_logs(device_id) WHERE ended_at IS NULL;
+  `,
 ];
 
 // node:sqlite rejects booleans and undefined as bind values.

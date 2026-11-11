@@ -204,7 +204,7 @@ export function dataTable({ columns, rows, empty = 'Nothing to show yet.', onRow
  * Searchable, paginated table backed by an admin list endpoint returning
  * `{ items, total, page, pageSize }`.
  */
-export function listView({ endpoint, columns, searchPlaceholder = 'Search…', filters = [], toolbar = [], empty, onRowClick, pageSize = 25, initial = {} }) {
+export function listView({ endpoint, columns, searchPlaceholder = 'Search…', filters = [], toolbar = [], empty, onRowClick, onData, pageSize = 25, initial = {} }) {
   const state = { q: initial.q ?? '', page: 1, filters: { ...initial.filters } };
   const body = h('div', { class: 'list-body' });
   const pager = h('div', { class: 'pager' });
@@ -242,6 +242,7 @@ export function listView({ endpoint, columns, searchPlaceholder = 'Search…', f
     try {
       const data = await api.get(`${endpoint}?${params}`);
       if (id !== seq) return;
+      onData?.(data);
       clear(body).append(dataTable({ columns, rows: data.items, empty: state.q ? 'No matches.' : empty, onRowClick }));
       renderPager(data);
     } catch (err) {
