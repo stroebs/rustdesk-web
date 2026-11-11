@@ -48,3 +48,19 @@ test/                node:test suites
   `routes/client.js`, since RustDesk clients depend on exact response shapes.
 - Keep commits focused. Describe what you tested and which RustDesk client
   version(s) you tested against.
+
+## Releasing
+
+1. Bump `version` in `package.json` and merge that to `main`.
+2. Tag the merge commit and push the tag:
+
+   ```bash
+   git tag v0.2.0 && git push origin v0.2.0
+   ```
+
+The [Release workflow](.github/workflows/release.yml) checks that the tag matches
+`package.json`, runs the tests, publishes `stroebs/rustdesk-web` to Docker Hub for
+`linux/amd64` and `linux/arm64` (as `0.2.0`, `0.2` and `latest`), then smoke-tests
+both images. Pre-release tags such as `v0.3.0-rc.1` don't move `latest`.
+
+It needs the repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`.

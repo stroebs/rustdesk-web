@@ -47,8 +47,18 @@ docker compose logs rustdesk-web   # the initial admin password is printed here
 Open `http://<your-host>:21114` and sign in as `admin`. Then go to **Settings**, fill in
 your ID server and API server, and copy the configuration string.
 
-Already running hbbs? Use just the `rustdesk-web` service from the compose file, and
-mount your existing hbbs data directory at `/hbbs`.
+Already running hbbs? Run only the console, mounting your existing hbbs data directory:
+
+```bash
+docker run -d --name rustdesk-web -p 21114:21114 \
+  -v rustdesk-web-data:/data \
+  -v /path/to/hbbs-data:/hbbs:ro \
+  -e HBBS_DB_PATH=/hbbs/db_v2.sqlite3 -e HBBS_KEY_FILE=/hbbs/id_ed25519.pub \
+  stroebs/rustdesk-web:latest
+```
+
+Images are published to [Docker Hub](https://hub.docker.com/r/stroebs/rustdesk-web)
+for `linux/amd64` and `linux/arm64`.
 
 ## Running without Docker
 

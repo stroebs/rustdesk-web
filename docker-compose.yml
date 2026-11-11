@@ -36,7 +36,8 @@ services:
     restart: unless-stopped
 
   rustdesk-web:
-    build: .
+    image: stroebs/rustdesk-web:latest
+    # build: .                             # to build from this checkout instead
     container_name: rustdesk-web
     environment:
       # ADMIN_PASSWORD: change-me          # otherwise a random one is printed in the logs

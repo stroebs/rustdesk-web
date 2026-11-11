@@ -1,8 +1,18 @@
+# The data directory is prepared on the build platform so the final stage has no
+# RUN steps; that lets `docker buildx` produce arm64/amd64 images without emulation.
+FROM --platform=$BUILDPLATFORM alpine:3.22 AS prep
+RUN mkdir -p /out/data
+
 FROM node:24-alpine
 
+ARG VERSION=dev
+ARG REVISION=unknown
 LABEL org.opencontainers.image.title="rustdesk-web" \
       org.opencontainers.image.description="Admin web interface and API server for RustDesk OSS" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.source="https://github.com/stroebs/rustdesk-web" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}"
 
 ENV NODE_ENV=production \
     DATA_DIR=/data \
@@ -12,8 +22,8 @@ WORKDIR /app
 COPY package.json ./
 COPY src ./src
 COPY public ./public
+COPY --from=prep --chown=node:node /out/data /data
 
-RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME ["/data"]
 EXPOSE 21114
