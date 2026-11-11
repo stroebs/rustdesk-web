@@ -31,6 +31,8 @@ It stores its data in SQLite.
 <details>
 <summary>More screenshots</summary>
 
+![Remote session in the browser](docs/remote-session.png)
+![Devices](docs/devices.png)
 ![Address book](docs/address-book.png)
 ![Dark mode](docs/dashboard-dark.png)
 
